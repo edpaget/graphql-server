@@ -16,7 +16,7 @@
     (let [resolver-map {[:Query :hello]
                         [[:=> [:cat :any :any :any] :string]
                          (fn [_ _ _] "world")]}
-          result (schema/->graphql-schema resolver-map)]
+          result       (schema/->graphql-schema resolver-map)]
       (is (= {:objects
               {:Query
                {:fields
@@ -28,7 +28,7 @@
     (let [resolver-map {[:Query :count]
                         [[:=> [:cat :any :any :any] :int]
                          (fn [_ _ _] 42)]}
-          result (schema/->graphql-schema resolver-map)]
+          result       (schema/->graphql-schema resolver-map)]
       (is (= {:objects
               {:Query
                {:fields
@@ -40,7 +40,7 @@
     (let [resolver-map {[:Query :isActive]
                         [[:=> [:cat :any :any :any] :boolean]
                          (fn [_ _ _] true)]}
-          result (schema/->graphql-schema resolver-map)]
+          result       (schema/->graphql-schema resolver-map)]
       (is (= {:objects
               {:Query
                {:fields
@@ -52,7 +52,7 @@
     (let [resolver-map {[:Query :getId]
                         [[:=> [:cat :any :any :any] :uuid]
                          (fn [_ _ _] (random-uuid))]}
-          result (schema/->graphql-schema resolver-map)]
+          result       (schema/->graphql-schema resolver-map)]
       (is (= {:objects
               {:Query
                {:fields
@@ -64,7 +64,7 @@
     (let [resolver-map {[:Query :getPrice]
                         [[:=> [:cat :any :any :any] :double]
                          (fn [_ _ _] 99.99)]}
-          result (schema/->graphql-schema resolver-map)]
+          result       (schema/->graphql-schema resolver-map)]
       (is (= {:objects
               {:Query
                {:fields
@@ -76,7 +76,7 @@
     (let [resolver-map {[:Query :getRating]
                         [[:=> [:cat :any :any :any] :float]
                          (fn [_ _ _] 4.5)]}
-          result (schema/->graphql-schema resolver-map)]
+          result       (schema/->graphql-schema resolver-map)]
       (is (= {:objects
               {:Query
                {:fields
@@ -88,7 +88,7 @@
     (let [resolver-map {[:Query :optionalName]
                         [[:=> [:cat :any :any :any] [:maybe :string]]
                          (fn [_ _ _] nil)]}
-          result (schema/->graphql-schema resolver-map)]
+          result       (schema/->graphql-schema resolver-map)]
       (is (= {:objects
               {:Query
                {:fields
@@ -100,7 +100,7 @@
     (let [resolver-map {[:Query :tags]
                         [[:=> [:cat :any :any :any] [:vector :string]]
                          (fn [_ _ _] ["tag1" "tag2"])]}
-          result (schema/->graphql-schema resolver-map)]
+          result       (schema/->graphql-schema resolver-map)]
       (is (= {:objects
               {:Query
                {:fields
@@ -112,7 +112,7 @@
     (let [resolver-map {[:Query :status]
                         [[:=> [:cat :any :any :any] [:enum {:graphql/type :Status} :active :inactive :pending]]
                          (fn [_ _ _] :active)]}
-          result (schema/->graphql-schema resolver-map)]
+          result       (schema/->graphql-schema resolver-map)]
       (is (= {:objects
               {:Query
                {:fields
@@ -132,14 +132,14 @@
 
 (deftest query-with-object-return
   (testing "Query field returning custom object type"
-    (let [user-schema [:map {:graphql/type :User}
-                       [:id :uuid]
-                       [:name :string]
-                       [:email :string]]
+    (let [user-schema  [:map {:graphql/type :User}
+                        [:id :uuid]
+                        [:name :string]
+                        [:email :string]]
           resolver-map {[:Query :user]
                         [[:=> [:cat :any :any :any] user-schema]
                          (fn [_ _ _] {:id (random-uuid) :name "Alice" :email "alice@example.com"})]}
-          result (schema/->graphql-schema resolver-map)]
+          result       (schema/->graphql-schema resolver-map)]
       (is (= {:objects
               {:Query
                {:fields
@@ -156,16 +156,16 @@
     (let [address-schema [:map {:graphql/type :Address}
                           [:street :string]
                           [:city :string]]
-          user-schema [:map {:graphql/type :User}
-                       [:id :uuid]
-                       [:name :string]
-                       [:address address-schema]]
-          resolver-map {[:Query :user]
-                        [[:=> [:cat :any :any :any] user-schema]
-                         (fn [_ _ _] {:id (random-uuid)
-                                      :name "Alice"
-                                      :address {:street "123 Main" :city "NYC"}})]}
-          result (schema/->graphql-schema resolver-map)]
+          user-schema    [:map {:graphql/type :User}
+                          [:id :uuid]
+                          [:name :string]
+                          [:address address-schema]]
+          resolver-map   {[:Query :user]
+                          [[:=> [:cat :any :any :any] user-schema]
+                           (fn [_ _ _] {:id (random-uuid)
+                                        :name "Alice"
+                                        :address {:street "123 Main" :city "NYC"}})]}
+          result         (schema/->graphql-schema resolver-map)]
       (is (= {:objects
               {:Query
                {:fields
@@ -185,10 +185,10 @@
   (testing "Query field returning interface type"
     (let [node-interface [:map {:graphql/interface :Node}
                           [:id :uuid]]
-          resolver-map {[:Query :node]
-                        [[:=> [:cat :any :any :any] node-interface]
-                         (fn [_ _ _] {:id (random-uuid)})]}
-          result (schema/->graphql-schema resolver-map)]
+          resolver-map   {[:Query :node]
+                          [[:=> [:cat :any :any :any] node-interface]
+                           (fn [_ _ _] {:id (random-uuid)})]}
+          result         (schema/->graphql-schema resolver-map)]
       (is (= {:objects
               {:Query
                {:fields
@@ -201,14 +201,14 @@
 
 (deftest query-with-union-return
   (testing "Query field returning union type"
-    (let [user-schema [:map {:graphql/type :User}
-                       [:id :uuid]
-                       [:type [:= :user]]
-                       [:name :string]]
-          org-schema [:map {:graphql/type :Organization}
-                      [:id :uuid]
-                      [:type [:= :org]]
-                      [:orgName :string]]
+    (let [user-schema  [:map {:graphql/type :User}
+                        [:id :uuid]
+                        [:type [:= :user]]
+                        [:name :string]]
+          org-schema   [:map {:graphql/type :Organization}
+                        [:id :uuid]
+                        [:type [:= :org]]
+                        [:orgName :string]]
           actor-schema [:multi {:graphql/type :Actor
                                 :dispatch :type}
                         [:user user-schema]
@@ -216,7 +216,7 @@
           resolver-map {[:Query :actor]
                         [[:=> [:cat :any :any :any] actor-schema]
                          (fn [_ _ _] {:type :user :id (random-uuid) :name "Alice"})]}
-          result (schema/->graphql-schema resolver-map)]
+          result       (schema/->graphql-schema resolver-map)]
       (is (= {:objects
               {:Query
                {:fields
@@ -237,14 +237,14 @@
   (testing "Query field returning object that implements interface"
     (let [node-interface [:map {:graphql/interface :Node}
                           [:id :uuid]]
-          user-schema [:map {:graphql/type :User
-                             :graphql/implements [node-interface]}
-                       [:id :uuid]
-                       [:name :string]]
-          resolver-map {[:Query :user]
-                        [[:=> [:cat :any :any :any] user-schema]
-                         (fn [_ _ _] {:id (random-uuid) :name "Alice"})]}
-          result (schema/->graphql-schema resolver-map)]
+          user-schema    [:map {:graphql/type :User
+                                :graphql/implements [node-interface]}
+                          [:id :uuid]
+                          [:name :string]]
+          resolver-map   {[:Query :user]
+                          [[:=> [:cat :any :any :any] user-schema]
+                           (fn [_ _ _] {:id (random-uuid) :name "Alice"})]}
+          result         (schema/->graphql-schema resolver-map)]
       (is (= {:objects
               {:Query
                {:fields
@@ -265,7 +265,7 @@
     (let [resolver-map {[:Query :greet]
                         [[:=> [:cat :any [:map [:name :string]] :any] :string]
                          (fn [_ {:keys [name]} _] (str "Hello, " name))]}
-          result (schema/->graphql-schema resolver-map)]
+          result       (schema/->graphql-schema resolver-map)]
       (is (= {:objects
               {:Query
                {:fields
@@ -277,8 +277,8 @@
   (testing "Query field with multiple arguments"
     (let [resolver-map {[:Query :search]
                         [[:=> [:cat :any [:map [:query :string] [:limit :int]] :any] [:vector :string]]
-                         (fn [_ {:keys [query limit]} _] [])]}
-          result (schema/->graphql-schema resolver-map)]
+                         (fn [_ {:keys [_query _limit]} _] [])]}
+          result       (schema/->graphql-schema resolver-map)]
       (is (= {:objects
               {:Query
                {:fields
@@ -291,8 +291,8 @@
   (testing "Query field with optional arguments"
     (let [resolver-map {[:Query :users]
                         [[:=> [:cat :any [:map [:limit [:maybe :int]]] :any] [:vector :string]]
-                         (fn [_ {:keys [limit]} _] [])]}
-          result (schema/->graphql-schema resolver-map)]
+                         (fn [_ {:keys [_limit]} _] [])]}
+          result       (schema/->graphql-schema resolver-map)]
       (is (= {:objects
               {:Query
                {:fields
@@ -312,7 +312,7 @@
                            [:email :string]]]
                          (fn [_ {:keys [input]} _]
                            (assoc input :id (random-uuid)))]}
-          result (schema/->graphql-schema resolver-map)]
+          result       (schema/->graphql-schema resolver-map)]
       (is (= {:objects
               {:Mutation
                {:fields
@@ -341,7 +341,7 @@
                         [:Mutation :increment]
                         [[:=> [:cat :any :any :any] :int]
                          (fn [_ _ _] 43)]}
-          result (schema/->graphql-schema resolver-map)]
+          result       (schema/->graphql-schema resolver-map)]
       (is (= {:objects
               {:Query
                {:fields
@@ -354,14 +354,14 @@
 
 (deftest query-with-hidden-field
   (testing "Map with hidden field should not appear in GraphQL schema"
-    (let [user-schema [:map {:graphql/type :User}
-                       [:id :uuid]
-                       [:name :string]
-                       [:password {:graphql/hidden true} :string]]
+    (let [user-schema  [:map {:graphql/type :User}
+                        [:id :uuid]
+                        [:name :string]
+                        [:password {:graphql/hidden true} :string]]
           resolver-map {[:Query :user]
                         [[:=> [:cat :any :any :any] user-schema]
                          (fn [_ _ _] {:id (random-uuid) :name "Alice" :password "secret"})]}
-          result (schema/->graphql-schema resolver-map)]
+          result       (schema/->graphql-schema resolver-map)]
       (is (= {:objects
               {:Query
                {:fields
@@ -380,7 +380,7 @@
           resolver-map {[:Query :event]
                         [[:=> [:cat :any :any :any] event-schema]
                          (fn [_ _ _] {:id (random-uuid) :createdAt (java.time.Instant/now)})]}
-          result (schema/->graphql-schema resolver-map)]
+          result       (schema/->graphql-schema resolver-map)]
       (is (= {:objects
               {:Query
                {:fields
@@ -406,7 +406,7 @@
                            [:title :string]]]
                          (fn [_ {:keys [input]} _]
                            {:id (random-uuid) :title (:title input)})]}
-          result (schema/->graphql-schema resolver-map)]
+          result       (schema/->graphql-schema resolver-map)]
       (is (= {:objects
               {:Mutation
                {:fields
@@ -433,7 +433,7 @@
                         [[:=> [:cat :any :any :any] :string]
                          (fn [_ _ _] "world")
                          "Returns a greeting"]}
-          result (schema/->graphql-schema resolver-map)]
+          result       (schema/->graphql-schema resolver-map)]
       (is (= {:objects
               {:Query
                {:fields
@@ -443,14 +443,14 @@
 
 (deftest query-with-object-description
   (testing "Object type with :graphql/description"
-    (let [user-schema [:map {:graphql/type :User
-                             :graphql/description "A user in the system"}
-                       [:id :uuid]
-                       [:name :string]]
+    (let [user-schema  [:map {:graphql/type :User
+                              :graphql/description "A user in the system"}
+                        [:id :uuid]
+                        [:name :string]]
           resolver-map {[:Query :user]
                         [[:=> [:cat :any :any :any] user-schema]
                          (fn [_ _ _] {:id (random-uuid) :name "Alice"})]}
-          result (schema/->graphql-schema resolver-map)]
+          result       (schema/->graphql-schema resolver-map)]
       (is (= {:objects
               {:Query
                {:fields
@@ -464,13 +464,13 @@
 
 (deftest query-with-field-property-description
   (testing "Map field with :graphql/description property"
-    (let [user-schema [:map {:graphql/type :User}
-                       [:id :uuid]
-                       [:name {:graphql/description "The user's full name"} :string]]
+    (let [user-schema  [:map {:graphql/type :User}
+                        [:id :uuid]
+                        [:name {:graphql/description "The user's full name"} :string]]
           resolver-map {[:Query :user]
                         [[:=> [:cat :any :any :any] user-schema]
                          (fn [_ _ _] {:id (random-uuid) :name "Alice"})]}
-          result (schema/->graphql-schema resolver-map)]
+          result       (schema/->graphql-schema resolver-map)]
       (is (= {:objects
               {:Query
                {:fields
@@ -490,7 +490,7 @@
                                   :graphql/description "User account status"}
                            :active :inactive :pending]]
                          (fn [_ _ _] :active)]}
-          result (schema/->graphql-schema resolver-map)]
+          result       (schema/->graphql-schema resolver-map)]
       (is (= {:objects
               {:Query
                {:fields
@@ -505,10 +505,10 @@
     (let [node-interface [:map {:graphql/interface :Node
                                 :graphql/description "Object with unique identifier"}
                           [:id :uuid]]
-          resolver-map {[:Query :node]
-                        [[:=> [:cat :any :any :any] node-interface]
-                         (fn [_ _ _] {:id (random-uuid)})]}
-          result (schema/->graphql-schema resolver-map)]
+          resolver-map   {[:Query :node]
+                          [[:=> [:cat :any :any :any] node-interface]
+                           (fn [_ _ _] {:id (random-uuid)})]}
+          result         (schema/->graphql-schema resolver-map)]
       (is (= {:objects
               {:Query
                {:fields

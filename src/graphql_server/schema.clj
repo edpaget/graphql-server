@@ -210,8 +210,8 @@
   [schema _ children _]
   (if-let [enum-gql-name (->graphql-type-name schema)]
     (let [description (-> schema mc/properties :graphql/description)
-          enum-def (cond-> {:values (set (map name children))}
-                     description (assoc :description description))]
+          enum-def    (cond-> {:values (set (map name children))}
+                        description (assoc :description description))]
       [(list 'non-null enum-gql-name)
        {:enums {enum-gql-name enum-def}}])
     (throw (ex-info "enum schemas must have :graphql/type property"
@@ -236,8 +236,8 @@
 (defmethod ->graphql-type :map
   [schema _ field-entries _]
   (let [;; Process walked field entries - each is [fname opts [ftype ftypes]]
-        processed-fields (map ->graphql-field field-entries)
-        implements-refs (-> schema mc/properties :graphql/implements)
+        processed-fields              (map ->graphql-field field-entries)
+        implements-refs               (-> schema mc/properties :graphql/implements)
         ;; implements-refs are refs to other schemas
         [implements implements-types] (when (seq implements-refs)
                                         (->> (map mc/deref implements-refs)
@@ -247,17 +247,17 @@
                                                            (update 1 merge new-types)))
                                                      [[] {}])))
         ;; Separate field definitions from their type collections
-        field-results (into {} (keep first) processed-fields)
-        all-types (reduce (fn [acc entry]
-                            (if-let [[_ ftypes] entry]
-                              (merge acc ftypes)
-                              acc))
-                          implements-types
-                          processed-fields)
+        field-results                 (into {} (keep first) processed-fields)
+        all-types                     (reduce (fn [acc entry]
+                                                (if-let [[_ ftypes] entry]
+                                                  (merge acc ftypes)
+                                                  acc))
+                                              implements-types
+                                              processed-fields)
 
-        graphql-type (->graphql-type-name schema)
-        props (mc/properties schema)
-        description (:graphql/description props)]
+        graphql-type                  (->graphql-type-name schema)
+        props                         (mc/properties schema)
+        description                   (:graphql/description props)]
     (cond
       (:graphql/type props)
       (let [type-def (cond-> {:fields field-results}
@@ -285,7 +285,7 @@
                       (update 1 multi-merge child-types)))
                 [[] {}]
                 children)
-        type-name (->graphql-type-name schema)]
+        type-name                                                                        (->graphql-type-name schema)]
     [(list 'non-null type-name)
      (collect-types all-types :unions type-name {:members member-names})]))
 
@@ -317,16 +317,16 @@
     (case (mc/type schema)
       :=> (let [[args-schema return-schema] (mc/children schema)
                 ;; Walk the :cat args schema to extract argument map
-                [[_ args-type] args-types] (mc/walk args-schema (compile-function object-type))
+                [[_ args-type] args-types]  (mc/walk args-schema (compile-function object-type))
                 ;; Walk the return schema with ->graphql-type
-                [return-type return-types] (mc/walk return-schema ->graphql-type)
+                [return-type return-types]  (mc/walk return-schema ->graphql-type)
 
-                args-category (if (= object-type :Mutation) :input-objects :objects)
-                args-objects (:objects args-types)
-                combined-types (-> (dissoc args-types :objects)
-                                   (cond->
-                                    args-objects (assoc args-category args-objects))
-                                   (merge return-types))]
+                args-category               (if (= object-type :Mutation) :input-objects :objects)
+                args-objects                (:objects args-types)
+                combined-types              (-> (dissoc args-types :objects)
+                                                (cond->
+                                                 args-objects (assoc args-category args-objects))
+                                                (merge return-types))]
             [(cond-> {:type return-type}
                args-type (assoc :args args-type))
              combined-types])
@@ -334,8 +334,8 @@
              (when-not (= 3 (count children))
                (throw (ex-info "field resolvers must be 3-arity fns" {:arg-count (count children)})))
              (let [[_ctx-schema args-schema _val-schema] (mc/children schema)
-                   [args-type args-types] (mc/walk args-schema ->graphql-type)
-                   extracted-args (extract-object-fields args-type args-types)]
+                   [args-type args-types]                (mc/walk args-schema ->graphql-type)
+                   extracted-args                        (extract-object-fields args-type args-types)]
                [extracted-args args-types]))
       ;; For other schemas, delegate to ->graphql-type
       (mc/walk schema ->graphql-type))))
@@ -356,10 +356,10 @@
   (reduce (fn [acc [[object field] tuple]]
             (if (contains? #{:Query :Mutation} object)
               (let [[schema _resolver description] tuple
-                    [field-def field-types] (mc/walk schema (compile-function object))
-                    field-def-with-desc (cond-> field-def
-                                          description (assoc :description description))
-                    merged-types (merge-with merge acc field-types)]
+                    [field-def field-types]        (mc/walk schema (compile-function object))
+                    field-def-with-desc            (cond-> field-def
+                                                     description (assoc :description description))
+                    merged-types                   (merge-with merge acc field-types)]
                 (assoc-in merged-types [:objects object :fields (csk/->camelCaseKeyword field)] field-def-with-desc))
               acc))
           {}
@@ -383,8 +383,8 @@
   This is primarily used by Lacinia's :tag-with-type to resolve concrete types
   for unions and interfaces at query time."
   [schema]
-  (let [derefed (-> schema mc/schema mc/deref)
+  (let [derefed     (-> schema mc/schema mc/deref)
         dispatch-fn (-> derefed mc/properties :dispatch)
-        tag-map (mc/walk derefed ->tag-map)]
+        tag-map     (mc/walk derefed ->tag-map)]
     (fn [model]
       (get tag-map (dispatch-fn model)))))

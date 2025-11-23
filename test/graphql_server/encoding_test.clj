@@ -3,27 +3,27 @@
    [clojure.test :refer [deftest is testing]]
    [graphql-server.impl :as impl]))
 
-(def Status
+(def ^:private Status
   [:enum
    {:graphql/type :Status}
    :test.models.status/ACTIVE
    :test.models.status/INACTIVE])
 
-(def User
+(def ^:private User
   [:map
    {:graphql/type :User}
    [:user-id :uuid]
    [:user-name :string]
    [:status Status]])
 
-(def AdminUser
+(def ^:private AdminUser
   [:map
    {:graphql/type :AdminUser}
    [:user-id :uuid]
    [:user-name :string]
    [:admin-level :int]])
 
-(def Person
+(def ^:private Person
   [:multi
    {:graphql/type :Person
     :dispatch :type}

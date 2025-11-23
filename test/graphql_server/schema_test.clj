@@ -2,7 +2,14 @@
   (:require
    [clojure.test :refer [deftest is testing]]
    [graphql-server.schema :as schema]
-   [malli.core :as m]))
+   [malli.core :as mc]
+   [malli.experimental.time :as met]
+   [malli.registry :as mr]))
+
+(mr/set-default-registry!
+ (mr/composite-registry
+  (mc/default-schemas)
+  (met/schemas)))
 
 (deftest simple-query-with-string-return
   (testing "Query field returning string"
@@ -52,6 +59,30 @@
                 {:getId {:type '(non-null Uuid)}}}}}
              result)))))
 
+(deftest simple-query-with-double-return
+  (testing "Query field returning double"
+    (let [resolver-map {[:Query :getPrice]
+                        [[:=> [:cat :any :any :any] :double]
+                         (fn [_ _ _] 99.99)]}
+          result (schema/->graphql-schema resolver-map)]
+      (is (= {:objects
+              {:Query
+               {:fields
+                {:getPrice {:type '(non-null Float)}}}}}
+             result)))))
+
+(deftest simple-query-with-float-return
+  (testing "Query field returning float"
+    (let [resolver-map {[:Query :getRating]
+                        [[:=> [:cat :any :any :any] :float]
+                         (fn [_ _ _] 4.5)]}
+          result (schema/->graphql-schema resolver-map)]
+      (is (= {:objects
+              {:Query
+               {:fields
+                {:getRating {:type '(non-null Float)}}}}}
+             result)))))
+
 (deftest query-with-maybe-return
   (testing "Query field returning optional string"
     (let [resolver-map {[:Query :optionalName]
@@ -89,6 +120,15 @@
               :enums
               {:Status {:values #{"active" "inactive" "pending"}}}}
              result)))))
+
+(deftest query-with-enum-without-type
+  (testing "Enum without :graphql/type throws error"
+    (let [resolver-map {[:Query :status]
+                        [[:=> [:cat :any :any :any] [:enum :active :inactive :pending]]
+                         (fn [_ _ _] :active)]}]
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                            #"enum schemas must have :graphql/type property"
+                            (schema/->graphql-schema resolver-map))))))
 
 (deftest query-with-object-return
   (testing "Query field returning custom object type"
@@ -163,9 +203,11 @@
   (testing "Query field returning union type"
     (let [user-schema [:map {:graphql/type :User}
                        [:id :uuid]
+                       [:type [:= :user]]
                        [:name :string]]
           org-schema [:map {:graphql/type :Organization}
                       [:id :uuid]
+                      [:type [:= :org]]
                       [:orgName :string]]
           actor-schema [:multi {:graphql/type :Actor
                                 :dispatch :type}
@@ -196,7 +238,7 @@
     (let [node-interface [:map {:graphql/interface :Node}
                           [:id :uuid]]
           user-schema [:map {:graphql/type :User
-                             :graphql/implements [:Node]}
+                             :graphql/implements [node-interface]}
                        [:id :uuid]
                        [:name :string]]
           resolver-map {[:Query :user]
@@ -347,4 +389,133 @@
                {:fields
                 {:id {:type '(non-null Uuid)}
                  :createdAt {:type '(non-null Date)}}}}}
+             result)))))
+
+(deftest mutation-with-nested-input-objects
+  (testing "Mutation field with nested input objects"
+    (let [resolver-map {[:Mutation :createPost]
+                        [[:=> [:cat :any
+                               [:map [:input [:map {:graphql/type :CreatePostInput}
+                                              [:title :string]
+                                              [:author [:map {:graphql/type :AuthorInput}
+                                                        [:name :string]
+                                                        [:email :string]]]]]]
+                               :any]
+                          [:map {:graphql/type :Post}
+                           [:id :uuid]
+                           [:title :string]]]
+                         (fn [_ {:keys [input]} _]
+                           {:id (random-uuid) :title (:title input)})]}
+          result (schema/->graphql-schema resolver-map)]
+      (is (= {:objects
+              {:Mutation
+               {:fields
+                {:createPost {:type '(non-null :Post)
+                              :args {:input {:type '(non-null :CreatePostInput)}}}}}
+               :Post
+               {:fields
+                {:id {:type '(non-null Uuid)}
+                 :title {:type '(non-null String)}}}}
+              :input-objects
+              {:CreatePostInput
+               {:fields
+                {:title {:type '(non-null String)}
+                 :author {:type '(non-null :AuthorInput)}}}
+               :AuthorInput
+               {:fields
+                {:name {:type '(non-null String)}
+                 :email {:type '(non-null String)}}}}}
+             result)))))
+
+(deftest query-with-field-description
+  (testing "Query field with description from tuple"
+    (let [resolver-map {[:Query :hello]
+                        [[:=> [:cat :any :any :any] :string]
+                         (fn [_ _ _] "world")
+                         "Returns a greeting"]}
+          result (schema/->graphql-schema resolver-map)]
+      (is (= {:objects
+              {:Query
+               {:fields
+                {:hello {:type '(non-null String)
+                         :description "Returns a greeting"}}}}}
+             result)))))
+
+(deftest query-with-object-description
+  (testing "Object type with :graphql/description"
+    (let [user-schema [:map {:graphql/type :User
+                             :graphql/description "A user in the system"}
+                       [:id :uuid]
+                       [:name :string]]
+          resolver-map {[:Query :user]
+                        [[:=> [:cat :any :any :any] user-schema]
+                         (fn [_ _ _] {:id (random-uuid) :name "Alice"})]}
+          result (schema/->graphql-schema resolver-map)]
+      (is (= {:objects
+              {:Query
+               {:fields
+                {:user {:type '(non-null :User)}}}
+               :User
+               {:fields
+                {:id {:type '(non-null Uuid)}
+                 :name {:type '(non-null String)}}
+                :description "A user in the system"}}}
+             result)))))
+
+(deftest query-with-field-property-description
+  (testing "Map field with :graphql/description property"
+    (let [user-schema [:map {:graphql/type :User}
+                       [:id :uuid]
+                       [:name {:graphql/description "The user's full name"} :string]]
+          resolver-map {[:Query :user]
+                        [[:=> [:cat :any :any :any] user-schema]
+                         (fn [_ _ _] {:id (random-uuid) :name "Alice"})]}
+          result (schema/->graphql-schema resolver-map)]
+      (is (= {:objects
+              {:Query
+               {:fields
+                {:user {:type '(non-null :User)}}}
+               :User
+               {:fields
+                {:id {:type '(non-null Uuid)}
+                 :name {:type '(non-null String)
+                        :description "The user's full name"}}}}}
+             result)))))
+
+(deftest query-with-enum-description
+  (testing "Enum with :graphql/description"
+    (let [resolver-map {[:Query :status]
+                        [[:=> [:cat :any :any :any]
+                          [:enum {:graphql/type :Status
+                                  :graphql/description "User account status"}
+                           :active :inactive :pending]]
+                         (fn [_ _ _] :active)]}
+          result (schema/->graphql-schema resolver-map)]
+      (is (= {:objects
+              {:Query
+               {:fields
+                {:status {:type '(non-null :Status)}}}}
+              :enums
+              {:Status {:values #{"active" "inactive" "pending"}
+                        :description "User account status"}}}
+             result)))))
+
+(deftest query-with-interface-description
+  (testing "Interface with :graphql/description"
+    (let [node-interface [:map {:graphql/interface :Node
+                                :graphql/description "Object with unique identifier"}
+                          [:id :uuid]]
+          resolver-map {[:Query :node]
+                        [[:=> [:cat :any :any :any] node-interface]
+                         (fn [_ _ _] {:id (random-uuid)})]}
+          result (schema/->graphql-schema resolver-map)]
+      (is (= {:objects
+              {:Query
+               {:fields
+                {:node {:type '(non-null :Node)}}}}
+              :interfaces
+              {:Node
+               {:fields
+                {:id {:type '(non-null Uuid)}}
+                :description "Object with unique identifier"}}}
              result)))))

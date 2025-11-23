@@ -1,5 +1,130 @@
 (ns graphql-server.schema
-  "Schema definition and validation using Malli."
+  "GraphQL schema generation from Malli schemas.
+
+  This namespace transforms Malli schemas describing resolver functions into Lacinia-compatible
+  GraphQL schemas. The main entry point is [[->graphql-schema]], which takes a map of resolver
+  definitions and produces a complete GraphQL schema including objects, interfaces, unions,
+  enums, and input objects.
+
+  ## Resolver Schema Format
+
+  Resolvers are defined using Malli `:=>` (function) schemas that describe 3-arity functions:
+
+  ```clojure
+  [:=> [:cat context-schema args-schema value-schema] return-schema]
+  ```
+
+  Where:
+  - `context-schema` - Usually `:any`, represents the GraphQL context
+  - `args-schema` - A `:map` schema defining GraphQL field arguments (or `:any` for no args)
+  - `value-schema` - Usually `:any`, represents the parent value in nested resolvers
+  - `return-schema` - The return type schema
+
+  ## Type Annotations
+
+  Malli schemas use special properties to control GraphQL type generation:
+
+  - `{:graphql/type :TypeName}` - Marks a `:map` as a GraphQL object type
+  - `{:graphql/interface :InterfaceName}` - Marks a `:map` as a GraphQL interface
+  - `{:graphql/implements [Schema1 Schema2]}` - Object implements interfaces (must reference schemas, not keywords)
+  - `{:graphql/hidden true}` - Excludes a field from the GraphQL schema
+
+  ## Examples
+
+  ### Simple Query
+
+  ```clojure
+  (->graphql-schema
+    {[:Query :hello]
+     [[:=> [:cat :any :any :any] :string]
+      (fn [context args value] \"world\")]})
+  ```
+
+  ### Query with Arguments
+
+  ```clojure
+  (->graphql-schema
+    {[:Query :greet]
+     [[:=> [:cat :any [:map [:name :string]] :any] :string]
+      (fn [context {:keys [name]} value]
+        (str \"Hello, \" name))]})
+  ```
+
+  ### Custom Object Types
+
+  ```clojure
+  (def User
+    [:map {:graphql/type :User}
+     [:id :uuid]
+     [:name :string]
+     [:email :string]])
+
+  (->graphql-schema
+    {[:Query :user]
+     [[:=> [:cat :any [:map [:id :uuid]] :any] User]
+      (fn [context {:keys [id]} value]
+        (fetch-user id))]})
+  ```
+
+  ### Interfaces and Implementation
+
+  Interface schemas must be defined and referenced as schema values in `:graphql/implements`:
+
+  ```clojure
+  (def Node
+    [:map {:graphql/interface :Node}
+     [:id :uuid]])
+
+  (def User
+    [:map {:graphql/type :User
+           :graphql/implements [Node]}  ; Reference schema, not keyword
+     [:id :uuid]
+     [:name :string]])
+  ```
+
+  ### Union Types
+
+  ```clojure
+  (def SearchResult
+    [:multi {:graphql/type :SearchResult
+             :dispatch :type}
+     [:user [:map {:graphql/type :User} ...]]
+     [:org [:map {:graphql/type :Organization} ...]]])
+  ```
+
+  ### Mutations with Input Objects
+
+  Input objects are automatically created for mutation arguments:
+
+  ```clojure
+  {[:Mutation :createUser]
+   [[:=> [:cat :any
+          [:map [:input [:map {:graphql/type :CreateUserInput}
+                         [:name :string]
+                         [:email :string]]]]
+          :any]
+     [:map {:graphql/type :User} ...]]
+    (fn [context {:keys [input]} value]
+      (create-user input))]}
+  ```
+
+  ## Output Schema Format
+
+  The generated schema is a map containing:
+
+  ```clojure
+  {:objects {...}          ; GraphQL object types and Query/Mutation
+   :interfaces {...}       ; GraphQL interface types
+   :unions {...}           ; GraphQL union types
+   :enums {...}            ; GraphQL enum types
+   :input-objects {...}}   ; GraphQL input object types (for mutations)
+  ```
+
+  ## Naming Conventions
+
+  - Field names are converted to camelCase
+  - Type names use PascalCase
+  - Only `:Query` and `:Mutation` top-level objects are processed"
   (:require
    [camel-snake-kebab.core :as csk]
    [malli.core :as mc]))
@@ -24,8 +149,10 @@
   Returns [[field-name field-def] field-types] or nil if hidden."
   [[field-name opts [field-type field-types]]]
   (when-not (or (:graphql/hidden opts) (nil? field-type))
-    [[(csk/->camelCaseKeyword field-name) {:type field-type}]
-     field-types]))
+    (let [field-def (cond-> {:type field-type}
+                      (:graphql/description opts) (assoc :description (:graphql/description opts)))]
+      [[(csk/->camelCaseKeyword field-name) field-def]
+       field-types])))
 
 (defn- collect-types
   "Merge new types into accumulator map."
@@ -71,12 +198,24 @@
   [_ _ _ _]
   [(list 'non-null 'Boolean) {}])
 
+(defmethod ->graphql-type :double
+  [_ _ _ _]
+  [(list 'non-null 'Float) {}])
+
+(defmethod ->graphql-type :float
+  [_ _ _ _]
+  [(list 'non-null 'Float) {}])
+
 (defmethod ->graphql-type :enum
   [schema _ children _]
   (if-let [enum-gql-name (->graphql-type-name schema)]
-    [(list 'non-null enum-gql-name)
-     {:enums {enum-gql-name {:values (set (map name children))}}}]
-    [(list 'non-null 'String) {}]))
+    (let [description (-> schema mc/properties :graphql/description)
+          enum-def (cond-> {:values (set (map name children))}
+                     description (assoc :description description))]
+      [(list 'non-null enum-gql-name)
+       {:enums {enum-gql-name enum-def}}])
+    (throw (ex-info "enum schemas must have :graphql/type property"
+                    {:schema (mc/form schema)}))))
 
 (defmethod ->graphql-type :time/instant
   [_ _ _ _]
@@ -84,7 +223,9 @@
 
 (defmethod ->graphql-type :maybe
   [_ _ children _]
-  (let [[[child-type child-types]] children]
+  ;; child-type arrives in a maybe is always '(non-null Type)
+  ;; :maybe extracts and returns just Type
+  (let [[[[_ child-type] child-types]] children]
     [child-type child-types]))
 
 (defmethod ->graphql-type :vector
@@ -96,40 +237,52 @@
   [schema _ field-entries _]
   (let [;; Process walked field entries - each is [fname opts [ftype ftypes]]
         processed-fields (map ->graphql-field field-entries)
+        implements-refs (-> schema mc/properties :graphql/implements)
+        ;; implements-refs are refs to other schemas
+        [implements implements-types] (when (seq implements-refs)
+                                        (->> (map mc/deref implements-refs)
+                                             (map #(mc/walk %1 ->graphql-type))
+                                             (reduce (fn [accum [[_ interface] new-types]]
+                                                       (-> (update accum 0 conj interface)
+                                                           (update 1 merge new-types)))
+                                                     [[] {}])))
         ;; Separate field definitions from their type collections
-        field-results (into {} (comp (remove nil?) (map first)) processed-fields)
-        field-types (reduce (fn [acc entry]
-                              (if-let [[_ ftypes] entry]
-                                (merge acc ftypes)
-                                acc))
-                            {}
-                            processed-fields)
+        field-results (into {} (keep first) processed-fields)
+        all-types (reduce (fn [acc entry]
+                            (if-let [[_ ftypes] entry]
+                              (merge acc ftypes)
+                              acc))
+                          implements-types
+                          processed-fields)
 
         graphql-type (->graphql-type-name schema)
-        implements-refs (-> schema mc/properties :graphql/implements)
-        ;; implements-refs are just type name keywords like [:Node], not schemas to walk
-        implements (when implements-refs (vec implements-refs))
-        all-types field-types]
+        props (mc/properties schema)
+        description (:graphql/description props)]
     (cond
-      (-> schema mc/properties :graphql/type)
+      (:graphql/type props)
       (let [type-def (cond-> {:fields field-results}
-                       (seq implements) (assoc :implements implements))]
+                       (seq implements) (assoc :implements implements)
+                       description (assoc :description description))]
         [(list 'non-null graphql-type)
          (collect-types all-types :objects graphql-type type-def)])
 
-      (-> schema mc/properties :graphql/interface)
-      [(list 'non-null graphql-type)
-       (collect-types all-types :interfaces graphql-type {:fields field-results})]
+      (:graphql/interface props)
+      (let [type-def (cond-> {:fields field-results}
+                       description (assoc :description description))]
+        [(list 'non-null graphql-type)
+         (collect-types all-types :interfaces graphql-type type-def)])
 
       :else
       [(list 'non-null field-results) all-types])))
 
+(def ^:private multi-merge (partial merge-with merge))
+
 (defmethod ->graphql-type :multi
   [schema _ children _]
   (let [[member-names all-types]
-        (reduce (fn [[names types] [_dispatch-key _dispatch-value [child-type child-types]]]
-                  [(conj names child-type)
-                   (merge types child-types)])
+        (reduce (fn [accum [_dispatch-key _dispatch-value [[_ child-type] child-types]]]
+                  (-> (update accum 0 conj child-type)
+                      (update 1 multi-merge child-types)))
                 [[] {}]
                 children)
         type-name (->graphql-type-name schema)]
@@ -146,9 +299,9 @@
 
 (defn- extract-object-fields
   "Extract fields from an object type reference, returning just the fields map."
-  [type-ref types-map object-type]
+  [type-ref types-map]
   (if (keyword? type-ref)
-    (get-in types-map [object-type type-ref :fields])
+    (get-in types-map [:objects type-ref :fields])
     type-ref))
 
 (defn- compile-function
@@ -158,16 +311,22 @@
 
   This walker needs to handle `:=>` schemas by processing the args `:cat` and return type,
   but delegate actual type walking to `->graphql-type`."
-  [type object-type]
+  [object-type]
   (fn
     [schema _ children _]
     (case (mc/type schema)
       :=> (let [[args-schema return-schema] (mc/children schema)
                 ;; Walk the :cat args schema to extract argument map
-                [args-type args-types] (mc/walk args-schema (compile-function type object-type))
+                [[_ args-type] args-types] (mc/walk args-schema (compile-function object-type))
                 ;; Walk the return schema with ->graphql-type
                 [return-type return-types] (mc/walk return-schema ->graphql-type)
-                combined-types (merge args-types return-types)]
+
+                args-category (if (= object-type :Mutation) :input-objects :objects)
+                args-objects (:objects args-types)
+                combined-types (-> (dissoc args-types :objects)
+                                   (cond->
+                                    args-objects (assoc args-category args-objects))
+                                   (merge return-types))]
             [(cond-> {:type return-type}
                args-type (assoc :args args-type))
              combined-types])
@@ -175,189 +334,33 @@
              (when-not (= 3 (count children))
                (throw (ex-info "field resolvers must be 3-arity fns" {:arg-count (count children)})))
              (let [[_ctx-schema args-schema _val-schema] (mc/children schema)
-                   object-category (if (= object-type :Mutation) :input-objects :objects)
                    [args-type args-types] (mc/walk args-schema ->graphql-type)
-                   extracted-args (extract-object-fields args-type args-types object-category)]
+                   extracted-args (extract-object-fields args-type args-types)]
                [extracted-args args-types]))
       ;; For other schemas, delegate to ->graphql-type
       (mc/walk schema ->graphql-type))))
 
 (defn ->graphql-schema
-  "Converts a map of GraphQL resolver definitions into a Lacinia-compatible GraphQL schema.
+  "Converts resolver definitions into a Lacinia-compatible GraphQL schema.
 
-  This function transforms Malli schemas describing resolver functions into a complete
-  GraphQL schema that includes objects, interfaces, unions, enums, and input objects.
-  It walks through each resolver's type signature, extracting type information and
-  building a cohesive schema structure.
+  Takes a `resolver-map` where keys are `[object-type field-name]` tuples (e.g., `[:Query :user]`)
+  and values are `[malli-schema resolver-fn]` or `[malli-schema resolver-fn description]` tuples.
+  The Malli schema must describe a 3-arity resolver function using `[:=> [:cat context args value] return-type]`.
+  The optional description string will be added to the GraphQL field.
 
-  ## Input Format
+  Returns a map containing `:objects`, `:interfaces`, `:unions`, `:enums`, and `:input-objects`
+  with the complete GraphQL schema. All nested types are automatically discovered and registered.
 
-  The `resolver-map` is a map where:
-  - Keys are tuples of `[object-type field-name]`, e.g., `[:Query :user]` or `[:Mutation :createUser]`
-  - Values are tuples of `[malli-schema resolver-fn]`
-
-  The Malli schema must describe a 3-arity resolver function using the `:=>` (function) schema:
-
-  ```clojure
-  [:=> [:cat context-schema args-schema value-schema] return-schema]
-  ```
-
-  Where:
-  - `context-schema` - Usually `:any`, represents the GraphQL context
-  - `args-schema` - A `:map` schema defining GraphQL field arguments (or `:any` for no args)
-  - `value-schema` - Usually `:any`, represents the parent value in nested resolvers
-  - `return-schema` - The return type schema
-
-  ## Output Format
-
-  Returns a map with the following structure:
-
-  ```clojure
-  {:objects {...}          ;; GraphQL object types and Query/Mutation
-   :interfaces {...}       ;; GraphQL interface types
-   :unions {...}           ;; GraphQL union types
-   :enums {...}            ;; GraphQL enum types
-   :input-objects {...}}   ;; GraphQL input object types (for mutations)
-  ```
-
-  ## Examples
-
-  ### Simple Query with No Arguments
-
-  ```clojure
-  (->graphql-schema
-    {[:Query :hello]
-     [[:=> [:cat :any :any :any] :string]
-      (fn [context args value] \"world\")]})
-
-  ;; Returns:
-  {:objects
-   {:Query
-    {:fields
-     {:hello {:type '(non-null String)}}}}}
-  ```
-
-  ### Query with Arguments
-
-  ```clojure
-  (->graphql-schema
-    {[:Query :greet]
-     [[:=> [:cat :any [:map [:name :string]] :any] :string]
-      (fn [context {:keys [name]} value]
-        (str \"Hello, \" name))]})
-
-  ;; Returns:
-  {:objects
-   {:Query
-    {:fields
-     {:greet {:type '(non-null String)
-              :args {:name {:type '(non-null String)}}}}}}}
-  ```
-
-  ### Query Returning Custom Object
-
-  ```clojure
-  (def User
-    [:map {:graphql/type :User}
-     [:id :uuid]
-     [:name :string]
-     [:email :string]])
-
-  (->graphql-schema
-    {[:Query :user]
-     [[:=> [:cat :any [:map [:id :uuid]] :any] User]
-      (fn [context {:keys [id]} value]
-        (fetch-user id))]})
-
-  ;; Returns:
-  {:objects
-   {:Query
-    {:fields
-     {:user {:type '(non-null :User)
-             :args {:id {:type '(non-null Uuid)}}}}}
-    :User
-    {:fields
-     {:id {:type '(non-null Uuid)}
-      :name {:type '(non-null String)}
-      :email {:type '(non-null String)}}}}}
-  ```
-
-  ### Mutation with Input Object
-
-  ```clojure
-  (->graphql-schema
-    {[:Mutation :createUser]
-     [[:=> [:cat :any
-            [:map [:input [:map {:graphql/type :CreateUserInput}
-                           [:name :string]
-                           [:email :string]]]]
-            :any]
-       [:map {:graphql/type :User}
-        [:id :uuid]
-        [:name :string]
-        [:email :string]]]
-      (fn [context {:keys [input]} value]
-        (create-user input))]})
-
-  ;; Returns:
-  {:objects
-   {:Mutation
-    {:fields
-     {:createUser {:type '(non-null :User)
-                   :args {:input {:type '(non-null :CreateUserInput)}}}}}
-    :User
-    {:fields
-     {:id {:type '(non-null Uuid)}
-      :name {:type '(non-null String)}
-      :email {:type '(non-null String)}}}}
-   :input-objects
-   {:CreateUserInput
-    {:fields
-     {:name {:type '(non-null String)}
-      :email {:type '(non-null String)}}}}}
-  ```
-
-  ### Union Types
-
-  ```clojure
-  (def SearchResult
-    [:multi {:graphql/type :SearchResult
-             :dispatch :type}
-     [:user [:map {:graphql/type :User} [:id :uuid] [:name :string]]]
-     [:org [:map {:graphql/type :Organization} [:id :uuid] [:orgName :string]]]])
-
-  (->graphql-schema
-    {[:Query :search]
-     [[:=> [:cat :any [:map [:query :string]] :any] [:vector SearchResult]]
-      (fn [context {:keys [query]} value]
-        (search query))]})
-
-  ;; Returns:
-  {:objects
-   {:Query
-    {:fields
-     {:search {:type '(list (non-null :SearchResult))
-               :args {:query {:type '(non-null String)}}}}}
-    :User {...}
-    :Organization {...}}
-   :unions
-   {:SearchResult {:members [:User :Organization]}}}
-  ```
-
-  ## Notes
-
-  - Only `:Query` and `:Mutation` top-level objects are processed
-  - Field names are automatically converted to camelCase
-  - Type names use PascalCase
-  - All discovered types (nested objects, enums, etc.) are collected and included in the output
-  - For mutations, object types in args become `:input-objects` instead of `:objects`
-  - Fields marked with `{:graphql/hidden true}` are excluded from the schema"
+  See the namespace documentation for detailed examples and usage patterns."
   [resolver-map]
   (reduce (fn [acc [[object field] tuple]]
             (if (contains? #{:Query :Mutation} object)
-              (let [[field-def field-types] (mc/walk (first tuple) (compile-function :field object))
+              (let [[schema _resolver description] tuple
+                    [field-def field-types] (mc/walk schema (compile-function object))
+                    field-def-with-desc (cond-> field-def
+                                          description (assoc :description description))
                     merged-types (merge-with merge acc field-types)]
-                (assoc-in merged-types [:objects object :fields (csk/->camelCaseKeyword field)] field-def))
+                (assoc-in merged-types [:objects object :fields (csk/->camelCaseKeyword field)] field-def-with-desc))
               acc))
           {}
           resolver-map))

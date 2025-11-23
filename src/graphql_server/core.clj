@@ -111,22 +111,78 @@
                   [(:graphql/schema (meta v)) v]])))
        (into {})))
 
+(defn apply-middleware
+  "Applies a sequence of middleware functions to wrap resolver functions.
+
+  Middleware functions receive a resolver function and return a wrapped version.
+  Each middleware should have the signature: `(fn [resolver] (fn [ctx args value] ...))`.
+
+  Middleware is applied left-to-right, so the first middleware in the vector is
+  the outermost wrapper. For example, with `[auth-mw log-mw]`, the call stack is:
+  `auth-mw -> log-mw -> resolver`.
+
+  Example:
+
+      (defn auth-middleware [resolver]
+        (fn [ctx args value]
+          (if (:authenticated? ctx)
+            (resolver ctx args value)
+            {:errors {:message \"Unauthorized\"}})))
+
+      (def-resolver-map [auth-middleware])"
+  [middleware-fns resolver-map]
+  (if (seq middleware-fns)
+    (let [wrap-resolver (apply comp middleware-fns)]
+      (reduce-kv (fn [m k [schema resolver-fn-or-var]]
+                   (let [resolver-fn (if (var? resolver-fn-or-var)
+                                       @resolver-fn-or-var
+                                       resolver-fn-or-var)]
+                     (assoc m k [schema (wrap-resolver resolver-fn)])))
+                 {}
+                 resolver-map))
+    resolver-map))
+
 (defmacro def-resolver-map
   "Defines a var named `resolvers` containing all GraphQL resolvers in the current namespace.
 
   Call this macro at the end of a namespace that defines resolvers with [[defresolver]].
   It scans the namespace and collects all resolver definitions into a map.
 
-  Example:
+  Optionally accepts a docstring and/or a vector of middleware functions. Middleware
+  functions wrap each resolver and are applied left-to-right (first middleware is outermost).
 
-      (ns my.app.resolvers
-        (:require [graphql-server.core :refer [defresolver def-resolver-map]]))
+  Examples:
 
-      (defresolver :Query :users ...)
-      (defresolver :Mutation :createUser ...)
+      ;; Basic usage
+      (def-resolver-map)
 
-      (def-resolver-map)  ; Creates 'resolvers var"
-  []
-  (let [ns-sym (ns-name *ns*)]
-    `(def ~'resolvers
-       (collect-resolvers '~ns-sym))))
+      ;; With docstring
+      (def-resolver-map \"Resolvers for user operations\")
+
+      ;; With middleware
+      (def-resolver-map [auth-middleware logging-middleware])
+
+      ;; With both docstring and middleware
+      (def-resolver-map \"Resolvers for user operations\"
+        [auth-middleware logging-middleware])"
+  [& args]
+  (let [[doc middleware] (cond
+                           ;; No args
+                           (empty? args)
+                           [nil nil]
+
+                           ;; One arg - could be docstring or middleware
+                           (= 1 (count args))
+                           (if (string? (first args))
+                             [(first args) nil]
+                             [nil (first args)])
+
+                           ;; Two args - docstring and middleware
+                           :else
+                           [(first args) (second args)])
+        ns-sym           (ns-name *ns*)
+        def-form         `(def ~'resolvers
+                            ~@(when doc [doc])
+                            (apply-middleware ~(or middleware [])
+                                              (collect-resolvers '~ns-sym)))]
+    def-form))

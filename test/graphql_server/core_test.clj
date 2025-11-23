@@ -4,6 +4,7 @@
    [graphql-server.core :as core]
    [graphql-server.schema :as schema]
    [graphql-server.test-resolvers :as test-resolvers]
+   [graphql-server.test-resolvers-with-middleware :as test-mw]
    [malli.core :as mc]
    [malli.experimental.time :as met]
    [malli.registry :as mr]))
@@ -54,6 +55,22 @@
       (is (some? resolvers-var))
       (is (map? @resolvers-var))
       (is (contains? @resolvers-var [:Query :hello])))))
+
+(deftest def-resolver-map-with-docstring-test
+  (testing "def-resolver-map with docstring preserves docstring"
+    (let [resolvers-var (ns-resolve 'graphql-server.test-resolvers-with-middleware 'resolvers)
+          resolver-meta (meta resolvers-var)]
+      (is (some? resolvers-var))
+      (is (= "Resolvers with middleware" (:doc resolver-meta))))))
+
+(deftest def-resolver-map-with-middleware-test
+  (testing "def-resolver-map with middleware wraps resolvers"
+    (let [resolvers             test-mw/resolvers
+          [_schema resolver-fn] (get resolvers [:Query :withMiddleware])
+          result                (resolver-fn nil nil nil)]
+      ;; The resolver returns {:result "test"}
+      ;; The middleware adds {:middleware-applied true}
+      (is (= {:result "test" :middleware-applied true} result)))))
 
 (deftest integration-with-schema
   (testing "defresolver works with ->graphql-schema"

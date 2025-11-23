@@ -1,6 +1,7 @@
 (ns graphql-server.ring-test
   (:require
    [cheshire.core :as json]
+   [clojure.string :as str]
    [clojure.test :refer [deftest is testing]]
    [graphql-server.core :refer [defresolver def-resolver-map]]
    [graphql-server.ring :as ring]
@@ -167,11 +168,11 @@
       (is (= "Alice" (get-in body [:data :contextValue]))))))
 
 (deftest graphql-middleware-non-post-request-test
-  (testing "graphql-middleware ignores non-POST requests"
+  (testing "graphql-middleware ignores non-POST/GET requests"
     (let [handler  (ring/graphql-middleware
                     passthrough-handler
                     {:resolver-map resolvers})
-          request  {:request-method :get
+          request  {:request-method :put
                     :uri "/graphql"}
           response (handler request)]
       (is (= "not-graphql" (:body response))))))
@@ -210,3 +211,27 @@
           body     (json/parse-string (:body response) true)]
       (is (= 200 (:status response)))
       (is (some? (:errors body))))))
+
+(deftest graphql-middleware-get-request-graphiql-test
+  (testing "graphql-middleware serves GraphiQL on GET requests"
+    (let [handler  (ring/graphql-middleware
+                    passthrough-handler
+                    {:resolver-map resolvers})
+          request  {:request-method :get
+                    :uri "/graphql"}
+          response (handler request)]
+      (is (= 200 (:status response)))
+      (is (= "text/html" (get-in response [:headers "Content-Type"])))
+      (is (str/includes? (:body response) "GraphiQL"))
+      (is (str/includes? (:body response) "graphiql.min.js")))))
+
+(deftest graphql-middleware-graphiql-disabled-test
+  (testing "graphql-middleware does not serve GraphiQL when disabled"
+    (let [handler  (ring/graphql-middleware
+                    passthrough-handler
+                    {:resolver-map resolvers
+                     :enable-graphiql? false})
+          request  {:request-method :get
+                    :uri "/graphql"}
+          response (handler request)]
+      (is (= "not-graphql" (:body response))))))

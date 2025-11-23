@@ -63,6 +63,47 @@
       (response/status status)
       (response/content-type "application/json")))
 
+(defn- graphiql-response
+  "Creates a Ring response serving the GraphiQL IDE.
+
+  GraphiQL is an interactive GraphQL query explorer served on GET requests
+  to the GraphQL endpoint."
+  [path]
+  (-> (response/response
+       (str "<!DOCTYPE html>
+<html>
+<head>
+  <title>GraphiQL</title>
+  <style>
+    body {
+      height: 100%;
+      margin: 0;
+      width: 100%;
+      overflow: hidden;
+    }
+    #graphiql {
+      height: 100vh;
+    }
+  </style>
+  <script crossorigin src=\"https://unpkg.com/react@18/umd/react.production.min.js\"></script>
+  <script crossorigin src=\"https://unpkg.com/react-dom@18/umd/react-dom.production.min.js\"></script>
+  <link rel=\"stylesheet\" href=\"https://unpkg.com/graphiql/graphiql.min.css\" />
+</head>
+<body>
+  <div id=\"graphiql\">Loading...</div>
+  <script src=\"https://unpkg.com/graphiql/graphiql.min.js\" type=\"application/javascript\"></script>
+  <script>
+    const fetcher = GraphiQL.createFetcher({
+      url: '" path "',
+    });
+    const root = ReactDOM.createRoot(document.getElementById('graphiql'));
+    root.render(React.createElement(GraphiQL, { fetcher: fetcher }));
+  </script>
+</body>
+</html>"))
+      (response/status 200)
+      (response/content-type "text/html")))
+
 (defn- execute-graphql
   "Executes a GraphQL query using the compiled schema.
 
@@ -80,8 +121,9 @@
 (defn graphql-middleware
   "Ring middleware that handles GraphQL requests at a specified endpoint.
 
-  Intercepts POST requests to the GraphQL endpoint (default `/graphql`), decodes
-  the JSON body, executes the GraphQL query via Lacinia, and returns a JSON response.
+  Intercepts requests to the GraphQL endpoint:
+  - POST requests: Decodes JSON body, executes GraphQL query, returns JSON response
+  - GET requests: Serves GraphiQL interactive query explorer (unless disabled)
 
   Options:
   - `:path` - The URL path to intercept (default: `/graphql`)
@@ -89,6 +131,7 @@
   - `:context-fn` - Optional function `(fn [request] context-map)` to build GraphQL
                     context from the Ring request. Defaults to including the full request
                     under `:request` key.
+  - `:enable-graphiql?` - Whether to serve GraphiQL on GET requests (default: `true`)
 
   Example:
 
@@ -96,14 +139,18 @@
         (-> handler
             (graphql-middleware {:resolver-map my-resolvers
                                  :path \"/api/graphql\"
-                                 :context-fn (fn [req] {:user (:user req)})})))"
-  [handler {:keys [path resolver-map context-fn]
+                                 :context-fn (fn [req] {:user (:user req)})
+                                 :enable-graphiql? true})))"
+  [handler {:keys [path resolver-map context-fn enable-graphiql?]
             :or {path "/graphql"
-                 context-fn (fn [req] {:request req})}}]
+                 context-fn (fn [req] {:request req})
+                 enable-graphiql? true}}]
   (let [compiled-schema (build-lacinia-schema resolver-map)]
     (fn [request]
-      (if (and (= :post (:request-method request))
-               (str/starts-with? (:uri request) path))
+      (cond
+        ;; POST requests - execute GraphQL
+        (and (= :post (:request-method request))
+             (str/starts-with? (:uri request) path))
         (try
           (let [body                      (slurp (:body request))
                 {:keys [query variables]} (json/parse-string body true)
@@ -114,4 +161,13 @@
              {:errors [{:message (str "Invalid request: " (.getMessage e))
                         :type "bad-request"}]}
              400)))
+
+        ;; GET requests - serve GraphiQL
+        (and enable-graphiql?
+             (= :get (:request-method request))
+             (str/starts-with? (:uri request) path))
+        (graphiql-response path)
+
+        ;; Other requests - pass through
+        :else
         (handler request)))))

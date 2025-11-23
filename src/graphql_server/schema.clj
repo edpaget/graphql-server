@@ -364,27 +364,3 @@
               acc))
           {}
           resolver-map))
-
-(defn- ->tag-map
-  [schema _ children _]
-  (case (mc/type schema)
-    ::mc/schema (when-let [gql-type (mc/walk (mc/deref schema) ->tag-map)]
-                  (if (= gql-type :map) (->graphql-type-name schema) gql-type))
-    :multi (into {} (map (juxt first last)) children)
-    :map (or (->graphql-type-name schema) :map)
-    :merge (mc/walk (mc/deref schema) ->tag-map)
-    nil))
-
-(defn merge-tag-with-type
-  "Takes a Malli schema (typically a :multi schema representing a GraphQL union or interface)
-  and returns a function. This returned function, when given a data instance (model),
-  uses the original schema's dispatch function to determine the model's concrete type
-  and then returns the corresponding GraphQL type name (as a keyword).
-  This is primarily used by Lacinia's :tag-with-type to resolve concrete types
-  for unions and interfaces at query time."
-  [schema]
-  (let [derefed     (-> schema mc/schema mc/deref)
-        dispatch-fn (-> derefed mc/properties :dispatch)
-        tag-map     (mc/walk derefed ->tag-map)]
-    (fn [model]
-      (get tag-map (dispatch-fn model)))))

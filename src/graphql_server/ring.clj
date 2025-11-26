@@ -1,8 +1,10 @@
 (ns graphql-server.ring
   "Ring middleware for GraphQL endpoint handling.
 
-  Provides Ring middleware that intercepts GraphQL requests, decodes JSON,
-  executes queries via Lacinia, and encodes responses."
+  Provides Ring middleware that intercepts GraphQL requests and executes queries
+  via Lacinia. Expects the request body to be pre-parsed JSON (a Clojure map).
+  Use standard Ring JSON middleware like `ring.middleware.json/wrap-json-body`
+  before this middleware."
   (:require
    [cheshire.core :as json]
    [clojure.string :as str]
@@ -67,39 +69,81 @@
   "Creates a Ring response serving the GraphiQL IDE.
 
   GraphiQL is an interactive GraphQL query explorer served on GET requests
-  to the GraphQL endpoint."
+  to the GraphQL endpoint. Uses ES modules with React 19 and includes the
+  GraphiQL Explorer plugin."
   [path]
   (-> (response/response
-       (str "<!DOCTYPE html>
-<html>
-<head>
-  <title>GraphiQL</title>
-  <style>
-    body {
-      height: 100%;
-      margin: 0;
-      width: 100%;
-      overflow: hidden;
-    }
-    #graphiql {
-      height: 100vh;
-    }
-  </style>
-  <script crossorigin src=\"https://unpkg.com/react@18/umd/react.production.min.js\"></script>
-  <script crossorigin src=\"https://unpkg.com/react-dom@18/umd/react-dom.production.min.js\"></script>
-  <link rel=\"stylesheet\" href=\"https://unpkg.com/graphiql/graphiql.min.css\" />
-</head>
-<body>
-  <div id=\"graphiql\">Loading...</div>
-  <script src=\"https://unpkg.com/graphiql/graphiql.min.js\" type=\"application/javascript\"></script>
-  <script>
-    const fetcher = GraphiQL.createFetcher({
-      url: '" path "',
-    });
-    const root = ReactDOM.createRoot(document.getElementById('graphiql'));
-    root.render(React.createElement(GraphiQL, { fetcher: fetcher }));
-  </script>
-</body>
+       (str "<!doctype html>
+<html lang=\"en\">
+  <head>
+    <meta charset=\"UTF-8\" />
+    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />
+    <title>GraphiQL</title>
+    <style>
+      body {
+        margin: 0;
+      }
+      #graphiql {
+        height: 100dvh;
+      }
+      .loading {
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 4rem;
+      }
+    </style>
+    <link rel=\"stylesheet\" href=\"https://esm.sh/graphiql/dist/style.css\" />
+    <link rel=\"stylesheet\" href=\"https://esm.sh/@graphiql/plugin-explorer/dist/style.css\" />
+    <script type=\"importmap\">
+      {
+        \"imports\": {
+          \"react\": \"https://esm.sh/react@19.1.0\",
+          \"react/\": \"https://esm.sh/react@19.1.0/\",
+          \"react-dom\": \"https://esm.sh/react-dom@19.1.0\",
+          \"react-dom/\": \"https://esm.sh/react-dom@19.1.0/\",
+          \"graphiql\": \"https://esm.sh/graphiql?standalone&external=react,react-dom,@graphiql/react,graphql\",
+          \"graphiql/\": \"https://esm.sh/graphiql/\",
+          \"@graphiql/plugin-explorer\": \"https://esm.sh/@graphiql/plugin-explorer?standalone&external=react,@graphiql/react,graphql\",
+          \"@graphiql/react\": \"https://esm.sh/@graphiql/react?standalone&external=react,react-dom,graphql,@graphiql/toolkit,@emotion/is-prop-valid\",
+          \"@graphiql/toolkit\": \"https://esm.sh/@graphiql/toolkit?standalone&external=graphql\",
+          \"graphql\": \"https://esm.sh/graphql@16.11.0\",
+          \"@emotion/is-prop-valid\": \"data:text/javascript,\"
+        }
+      }
+    </script>
+    <script type=\"module\">
+      import React from 'react';
+      import ReactDOM from 'react-dom/client';
+      import { GraphiQL, HISTORY_PLUGIN } from 'graphiql';
+      import { createGraphiQLFetcher } from '@graphiql/toolkit';
+      import { explorerPlugin } from '@graphiql/plugin-explorer';
+      import 'graphiql/setup-workers/esm.sh';
+
+      const fetcher = createGraphiQLFetcher({
+        url: '" path "'
+      });
+      const plugins = [HISTORY_PLUGIN, explorerPlugin()];
+
+      function App() {
+        return React.createElement(GraphiQL, {
+          fetcher,
+          plugins,
+          defaultEditorToolsVisibility: true,
+        });
+      }
+
+      const container = document.getElementById('graphiql');
+      const root = ReactDOM.createRoot(container);
+      root.render(React.createElement(App));
+    </script>
+  </head>
+  <body>
+    <div id=\"graphiql\">
+      <div class=\"loading\">Loading…</div>
+    </div>
+  </body>
 </html>"))
       (response/status 200)
       (response/content-type "text/html")))
@@ -122,8 +166,12 @@
   "Ring middleware that handles GraphQL requests at a specified endpoint.
 
   Intercepts requests to the GraphQL endpoint:
-  - POST requests: Decodes JSON body, executes GraphQL query, returns JSON response
+  - POST requests: Executes GraphQL query from parsed body, returns JSON response
   - GET requests: Serves GraphiQL interactive query explorer (unless disabled)
+
+  The request `:body` must be a parsed map containing `:query` (string) and optionally
+  `:variables` (map). Use standard Ring JSON middleware like `ring.middleware.json/wrap-json-body`
+  before this middleware to parse incoming JSON requests.
 
   Options:
   - `:path` - The URL path to intercept (default: `/graphql`)
@@ -135,12 +183,15 @@
 
   Example:
 
+      (require '[ring.middleware.json :refer [wrap-json-body]])
+
       (def app
         (-> handler
             (graphql-middleware {:resolver-map my-resolvers
                                  :path \"/api/graphql\"
                                  :context-fn (fn [req] {:user (:user req)})
-                                 :enable-graphiql? true})))"
+                                 :enable-graphiql? true})
+            (wrap-json-body {:keywords? true})))"
   [handler {:keys [path resolver-map context-fn enable-graphiql?]
             :or {path "/graphql"
                  context-fn (fn [req] {:request req})
@@ -151,16 +202,9 @@
         ;; POST requests - execute GraphQL
         (and (= :post (:request-method request))
              (str/starts-with? (:uri request) path))
-        (try
-          (let [body                      (slurp (:body request))
-                {:keys [query variables]} (json/parse-string body true)
-                context                   (context-fn request)]
-            (execute-graphql compiled-schema query variables context))
-          (catch Exception e
-            (json-response
-             {:errors [{:message (str "Invalid request: " (.getMessage e))
-                        :type "bad-request"}]}
-             400)))
+        (let [{:keys [query variables]} (:body request)
+              context                   (context-fn request)]
+          (execute-graphql compiled-schema query variables context))
 
         ;; GET requests - serve GraphiQL
         (and enable-graphiql?

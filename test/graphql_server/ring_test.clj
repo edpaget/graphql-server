@@ -5,9 +5,7 @@
    [clojure.test :refer [deftest is testing]]
    [graphql-server.core :refer [defresolver def-resolver-map]]
    [graphql-server.ring :as ring]
-   [java-time.api :as t])
-  (:import
-   [java.io ByteArrayInputStream]))
+   [java-time.api :as t]))
 
 (defresolver :Query :hello
   [:=> [:cat :any :any :any] :string]
@@ -46,13 +44,8 @@
 
 (def-resolver-map)
 
-(defn- string->input-stream
-  "Converts a string to an input stream for Ring request body."
-  [s]
-  (ByteArrayInputStream. (.getBytes s)))
-
 (defn- make-graphql-request
-  "Creates a Ring request map for a GraphQL query."
+  "Creates a Ring request map for a GraphQL query with pre-parsed body."
   ([query]
    (make-graphql-request query nil))
   ([query variables]
@@ -62,10 +55,8 @@
     {:request-method :post
      :uri "/graphql"
      :headers {"content-type" "application/json"}
-     :body (string->input-stream
-            (json/generate-string
-             (cond-> {:query query}
-               variables (assoc :variables variables))))}
+     :body (cond-> {:query query}
+             variables (assoc :variables variables))}
     extra-keys)))
 
 (defn- passthrough-handler
@@ -187,19 +178,6 @@
           response (handler request)]
       (is (= "not-graphql" (:body response))))))
 
-(deftest graphql-middleware-invalid-json-test
-  (testing "graphql-middleware handles invalid JSON"
-    (let [handler  (ring/graphql-middleware
-                    passthrough-handler
-                    {:resolver-map resolvers})
-          request  {:request-method :post
-                    :uri "/graphql"
-                    :body (string->input-stream "not valid json")}
-          response (handler request)
-          body     (json/parse-string (:body response) true)]
-      (is (= 400 (:status response)))
-      (is (some? (:errors body)))
-      (is (= "bad-request" (get-in body [:errors 0 :type]))))))
 
 (deftest graphql-middleware-graphql-error-test
   (testing "graphql-middleware handles GraphQL errors"
@@ -223,7 +201,7 @@
       (is (= 200 (:status response)))
       (is (= "text/html" (get-in response [:headers "Content-Type"])))
       (is (str/includes? (:body response) "GraphiQL"))
-      (is (str/includes? (:body response) "graphiql.min.js")))))
+      (is (str/includes? (:body response) "esm.sh/graphiql")))))
 
 (deftest graphql-middleware-graphiql-disabled-test
   (testing "graphql-middleware does not serve GraphiQL when disabled"

@@ -143,14 +143,30 @@
 
 (declare ->graphql-type)
 
+(defn- strip-non-null
+  "Strips the `non-null` wrapper from a GraphQL type if present.
+
+  Converts `(non-null Type)` to `Type`. Returns the type unchanged if not wrapped."
+  [graphql-type]
+  (if (and (seq? graphql-type) (= 'non-null (first graphql-type)))
+    (second graphql-type)
+    graphql-type))
+
 (defn- ->graphql-field
   "Process a walked map field entry.
-  Input is [field-name opts [field-type field-types]] where the field schema has been walked.
-  Returns [[field-name field-def] field-types] or nil if hidden."
+
+  Input is `[field-name opts [field-type field-types]]` where the field schema has been walked.
+  Returns `[[field-name field-def] field-types]` or nil if hidden.
+
+  Optional keys (`:optional true` in Malli) become nullable types in GraphQL by stripping
+  the `non-null` wrapper from the field type."
   [[field-name opts [field-type field-types]]]
   (when-not (or (:graphql/hidden opts) (nil? field-type))
-    (let [field-def (cond-> {:type field-type}
-                      (:graphql/description opts) (assoc :description (:graphql/description opts)))]
+    (let [final-type (if (:optional opts)
+                       (strip-non-null field-type)
+                       field-type)
+          field-def  (cond-> {:type final-type}
+                       (:graphql/description opts) (assoc :description (:graphql/description opts)))]
       [[(csk/->camelCaseKeyword field-name) field-def]
        field-types])))
 

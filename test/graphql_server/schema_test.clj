@@ -519,3 +519,101 @@
                 {:id {:type '(non-null Uuid)}}
                 :description "Object with unique identifier"}}}
              result)))))
+
+(deftest query-with-optional-object-field
+  (testing "Object with optional field becomes nullable in GraphQL"
+    (let [user-schema  [:map {:graphql/type :User}
+                        [:id :uuid]
+                        [:name :string]
+                        [:nickname {:optional true} :string]]
+          resolver-map {[:Query :user]
+                        [[:=> [:cat :any :any :any] user-schema]
+                         (fn [_ _ _] {:id (random-uuid) :name "Alice"})]}
+          result       (schema/->graphql-schema resolver-map)]
+      (is (= {:objects
+              {:Query
+               {:fields
+                {:user {:type '(non-null :User)}}}
+               :User
+               {:fields
+                {:id {:type '(non-null Uuid)}
+                 :name {:type '(non-null String)}
+                 :nickname {:type 'String}}}}}
+             result)))))
+
+(deftest query-with-optional-nested-object-field
+  (testing "Object with optional nested object field becomes nullable"
+    (let [address-schema [:map {:graphql/type :Address}
+                          [:street :string]
+                          [:city :string]]
+          user-schema    [:map {:graphql/type :User}
+                          [:id :uuid]
+                          [:name :string]
+                          [:address {:optional true} address-schema]]
+          resolver-map   {[:Query :user]
+                          [[:=> [:cat :any :any :any] user-schema]
+                           (fn [_ _ _] {:id (random-uuid) :name "Alice"})]}
+          result         (schema/->graphql-schema resolver-map)]
+      (is (= {:objects
+              {:Query
+               {:fields
+                {:user {:type '(non-null :User)}}}
+               :User
+               {:fields
+                {:id {:type '(non-null Uuid)}
+                 :name {:type '(non-null String)}
+                 :address {:type :Address}}}
+               :Address
+               {:fields
+                {:street {:type '(non-null String)}
+                 :city {:type '(non-null String)}}}}}
+             result)))))
+
+(deftest query-with-optional-and-maybe-field
+  (testing "Optional field with :maybe type stays nullable (no double unwrap)"
+    (let [user-schema  [:map {:graphql/type :User}
+                        [:id :uuid]
+                        [:name :string]
+                        [:bio {:optional true} [:maybe :string]]]
+          resolver-map {[:Query :user]
+                        [[:=> [:cat :any :any :any] user-schema]
+                         (fn [_ _ _] {:id (random-uuid) :name "Alice"})]}
+          result       (schema/->graphql-schema resolver-map)]
+      (is (= {:objects
+              {:Query
+               {:fields
+                {:user {:type '(non-null :User)}}}
+               :User
+               {:fields
+                {:id {:type '(non-null Uuid)}
+                 :name {:type '(non-null String)}
+                 :bio {:type 'String}}}}}
+             result)))))
+
+(deftest mutation-with-optional-input-field
+  (testing "Input object with optional field becomes nullable"
+    (let [resolver-map {[:Mutation :createUser]
+                        [[:=> [:cat :any [:map [:input [:map {:graphql/type :CreateUserInput}
+                                                        [:name :string]
+                                                        [:email {:optional true} :string]]]] :any]
+                          [:map {:graphql/type :User}
+                           [:id :uuid]
+                           [:name :string]]]
+                         (fn [_ {:keys [input]} _]
+                           (assoc input :id (random-uuid)))]}
+          result       (schema/->graphql-schema resolver-map)]
+      (is (= {:objects
+              {:Mutation
+               {:fields
+                {:createUser {:type '(non-null :User)
+                              :args {:input {:type '(non-null :CreateUserInput)}}}}}
+               :User
+               {:fields
+                {:id {:type '(non-null Uuid)}
+                 :name {:type '(non-null String)}}}}
+              :input-objects
+              {:CreateUserInput
+               {:fields
+                {:name {:type '(non-null String)}
+                 :email {:type 'String}}}}}
+             result)))))

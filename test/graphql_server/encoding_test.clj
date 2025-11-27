@@ -157,3 +157,43 @@
       (is (= :AdminUser (:com.walmartlabs.lacinia.schema/type-name (meta (second (:data result))))))
       ;; Nested pageInfo is tagged
       (is (= :PageInfo (:com.walmartlabs.lacinia.schema/type-name (meta (:pageInfo result))))))))
+
+(deftest coerce-args-transforms-keys-test
+  (testing "coerce-args transforms camelCase keys to kebab-case"
+    (let [arg-schema [:map [:user-name :string] [:user-id :uuid]]
+          resolver   (fn [_ctx args _value] args)
+          wrapped    (impl/coerce-args arg-schema resolver)
+          result     (wrapped nil {:userName "Alice"
+                                   :userId "550e8400-e29b-41d4-a716-446655440000"} nil)]
+      (is (= "Alice" (:user-name result)))
+      (is (= #uuid "550e8400-e29b-41d4-a716-446655440000" (:user-id result)))
+      (is (not (contains? result :userName)))
+      (is (not (contains? result :userId))))))
+
+(deftest coerce-args-transforms-enums-test
+  (testing "coerce-args transforms string enum values to namespaced keywords"
+    (let [arg-schema [:map [:status Status]]
+          resolver   (fn [_ctx args _value] args)
+          wrapped    (impl/coerce-args arg-schema resolver)
+          result     (wrapped nil {:status "ACTIVE"} nil)]
+      (is (= :test.models.status/ACTIVE (:status result))))))
+
+(deftest coerce-args-nested-maps-test
+  (testing "coerce-args transforms nested map keys"
+    (let [arg-schema [:map
+                      [:filter [:map
+                                [:min-age :int]
+                                [:max-age {:optional true} :int]]]]
+          resolver   (fn [_ctx args _value] args)
+          wrapped    (impl/coerce-args arg-schema resolver)
+          result     (wrapped nil {:filter {:minAge 18 :maxAge 65}} nil)]
+      (is (= 18 (get-in result [:filter :min-age])))
+      (is (= 65 (get-in result [:filter :max-age]))))))
+
+(deftest coerce-args-validation-error-test
+  (testing "coerce-args returns errors on validation failure"
+    (let [arg-schema [:map [:user-name :string]]
+          resolver   (fn [_ctx args _value] args)
+          wrapped    (impl/coerce-args arg-schema resolver)
+          result     (wrapped nil {:userName 123} nil)]
+      (is (contains? result :errors)))))

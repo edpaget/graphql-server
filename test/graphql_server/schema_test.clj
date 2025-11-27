@@ -617,3 +617,54 @@
                 {:name {:type '(non-null String)}
                  :email {:type 'String}}}}}
              result)))))
+
+(deftest query-with-enum-argument
+  (testing "Query field with enum argument adds enum to schema"
+    (let [status-enum  [:enum {:graphql/type :Status} :active :inactive :pending]
+          resolver-map {[:Query :usersByStatus]
+                        [[:=> [:cat :any [:map [:status status-enum]] :any] [:vector :string]]
+                         (fn [_ {:keys [_status]} _] [])]}
+          result       (schema/->graphql-schema resolver-map)]
+      (is (= {:objects
+              {:Query
+               {:fields
+                {:usersByStatus {:type '(list (non-null String))
+                                 :args {:status {:type '(non-null :Status)}}}}}}
+              :enums
+              {:Status {:values #{"active" "inactive" "pending"}}}}
+             result))))
+
+  (testing "Query field with optional enum argument"
+    (let [status-enum  [:enum {:graphql/type :Status} :active :inactive :pending]
+          resolver-map {[:Query :users]
+                        [[:=> [:cat :any [:map [:status {:optional true} status-enum]] :any] [:vector :string]]
+                         (fn [_ {:keys [_status]} _] [])]}
+          result       (schema/->graphql-schema resolver-map)]
+      (is (= {:objects
+              {:Query
+               {:fields
+                {:users {:type '(list (non-null String))
+                         :args {:status {:type :Status}}}}}}
+              :enums
+              {:Status {:values #{"active" "inactive" "pending"}}}}
+             result))))
+
+  (testing "Multiple enums in arguments and return types are all included"
+    (let [status-enum   [:enum {:graphql/type :Status} :active :inactive :pending]
+          role-enum     [:enum {:graphql/type :Role} :admin :user :guest]
+          priority-enum [:enum {:graphql/type :Priority} :low :medium :high]
+          resolver-map  {[:Query :usersByStatus]
+                         [[:=> [:cat :any [:map [:status status-enum] [:role role-enum]] :any] priority-enum]
+                          (fn [_ _ _] :medium)]}
+          result        (schema/->graphql-schema resolver-map)]
+      (is (= {:objects
+              {:Query
+               {:fields
+                {:usersByStatus {:type '(non-null :Priority)
+                                 :args {:status {:type '(non-null :Status)}
+                                        :role {:type '(non-null :Role)}}}}}}}
+             (select-keys result [:objects])))
+      (is (= {:Status {:values #{"active" "inactive" "pending"}}
+              :Role {:values #{"admin" "user" "guest"}}
+              :Priority {:values #{"low" "medium" "high"}}}
+             (:enums result))))))

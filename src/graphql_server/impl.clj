@@ -2,6 +2,7 @@
   "Internal implementation details for GraphQL resolver handling."
   (:require
    [camel-snake-kebab.core :as csk]
+   [clojure.tools.logging :as log]
    [com.walmartlabs.lacinia.schema :as schema]
    [malli.core :as mc]
    [malli.error :as merr]
@@ -17,29 +18,6 @@
     :=> (first children)
     :cat (second children)
     schema))
-
-(defn coerce-args
-  "Wraps a resolver function with Malli argument coercion.
-
-  Takes an argument schema and a 3-arity resolver function, returning a wrapped
-  function that coerces the second argument (GraphQL args) according to the schema.
-
-  On coercion failure, returns a map with `:errors` key containing humanized validation
-  errors. This allows the caller to handle errors appropriately (e.g., convert to
-  GraphQL error format)."
-  [arg-schema f]
-  (let [coerce (mc/coercer arg-schema)]
-    (fn [ctx args value]
-      (try
-        (let [coerced (coerce (or args {}))]
-          (if (mc/validate arg-schema coerced)
-            (f ctx coerced value)
-            {:errors (-> arg-schema
-                         (mc/explain coerced)
-                         merr/humanize)}))
-        (catch Exception e
-          {:errors {:message (ex-message e)
-                    :type (or (:type (ex-data e)) :unknown)}})))))
 
 (def ^:private enum-transformer
   "Malli transformer for enum values.
@@ -106,14 +84,60 @@
                   (schema/tag-with-type value tag))))
             identity)))}}}))
 
-(def ^:private kebab-key-transformer
-  "Malli transformer for map keys.
+(def ^:private decode-key-transformer
+  "Malli transformer for decoding map keys.
 
-  Decodes keys from camelCase to kebab-case keywords.
+  Decodes keys from camelCase to kebab-case keywords."
+  (mt/key-transformer
+   {:decode csk/->kebab-case-keyword}))
+
+(def ^:private encode-key-transformer
+  "Malli transformer for encoding map keys.
+
   Encodes keys from kebab-case keywords to camelCase keywords."
   (mt/key-transformer
-   {:decode csk/->kebab-case-keyword
-    :encode csk/->camelCaseKeyword}))
+   {:encode csk/->camelCaseKeyword}))
+
+(def ^:private decoding-transformer
+  "Composite transformer for decoding GraphQL inputs to application data.
+
+  Order of operations:
+  1. Transform map keys (camelCase keyword -> kebab-case keyword).
+  2. Transform enum values (string -> namespaced keyword)."
+  (mt/transformer
+   decode-key-transformer
+   enum-transformer
+   mt/string-transformer))
+
+(defn coerce-args
+  "Wraps a resolver function with Malli argument coercion.
+
+  Takes an argument schema and a 3-arity resolver function, returning a wrapped
+  function that decodes and coerces the second argument (GraphQL args) according
+  to the schema.
+
+  Arguments are decoded using [[decoding-transformer]] which:
+  - Converts camelCase keys to kebab-case keywords
+  - Converts string enum values to namespaced keywords (if schema uses them)
+  - Applies standard string->type coercions (e.g., string to UUID)
+
+  On coercion failure, returns a map with `:errors` key containing humanized validation
+  errors. This allows the caller to handle errors appropriately (e.g., convert to
+  GraphQL error format)."
+  [arg-schema f]
+  (let [coerce (mc/coercer arg-schema decoding-transformer)]
+    (fn [ctx args value]
+      (try
+        (let [coerced (coerce (or args {}))]
+          (if (mc/validate arg-schema coerced)
+            (f ctx coerced value)
+            {:errors (-> arg-schema
+                         (mc/explain coerced)
+                         merr/humanize)}))
+        (catch Exception e
+          (log/error e "Error during coercion")
+          {:errors {:message (ex-message e)
+                    :type (or (:type (ex-data e)) :unknown)}})))))
 
 (def ^:private encoding-transformer
   "Composite transformer for encoding data to GraphQL outputs.
@@ -124,7 +148,7 @@
   3. Apply Lacinia type tags to maps and multi types."
   (mt/transformer
    enum-transformer
-   kebab-key-transformer
+   encode-key-transformer
    lacinia-type-tag-transformer))
 
 (defn encode

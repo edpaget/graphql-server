@@ -175,6 +175,10 @@
   [acc type-category type-name type-def]
   (assoc-in acc [type-category type-name] type-def))
 
+(def ^:private multi-merge
+  "Deep merge for type maps - merges nested maps like :enums, :objects, etc."
+  (partial merge-with merge))
+
 (defmulti ^:private ->graphql-type
   "Convert Malli schema to GraphQL type representation.
   Returns [type-ref types-map] where type-ref is the GraphQL type reference
@@ -266,7 +270,7 @@
         field-results                 (into {} (keep first) processed-fields)
         all-types                     (reduce (fn [acc entry]
                                                 (if-let [[_ ftypes] entry]
-                                                  (merge acc ftypes)
+                                                  (multi-merge acc ftypes)
                                                   acc))
                                               implements-types
                                               processed-fields)
@@ -290,8 +294,6 @@
 
       :else
       [(list 'non-null field-results) all-types])))
-
-(def ^:private multi-merge (partial merge-with merge))
 
 (defmethod ->graphql-type :multi
   [schema _ children _]
@@ -342,7 +344,7 @@
                 combined-types              (-> (dissoc args-types :objects)
                                                 (cond->
                                                  args-objects (assoc args-category args-objects))
-                                                (merge return-types))]
+                                                (multi-merge return-types))]
             [(cond-> {:type return-type}
                args-type (assoc :args args-type))
              combined-types])

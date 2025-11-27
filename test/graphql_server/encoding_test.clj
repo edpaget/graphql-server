@@ -77,6 +77,35 @@
       (is (= "ACTIVE" (:status result)))
       (is (= :User (:com.walmartlabs.lacinia.schema/type-name (meta result))))))
 
+  (testing "wrap-resolver-with-encoding works with simple map types"
+    (let [resolver (fn [_ctx _args _value]
+                     {:user-id #uuid "550e8400-e29b-41d4-a716-446655440000"
+                      :user-name "Alice"
+                      :status :test.models.status/ACTIVE})
+          wrapped  (impl/wrap-resolver-with-encoding resolver User)
+          result   (wrapped nil nil nil)]
+      (is (= #uuid "550e8400-e29b-41d4-a716-446655440000" (:userId result)))
+      (is (= "Alice" (:userName result)))
+      (is (= "ACTIVE" (:status result)))
+      (is (= :User (:com.walmartlabs.lacinia.schema/type-name (meta result))))))
+
+  (testing "wrap-resolver-with-encoding unwraps :maybe types"
+    (let [resolver (fn [_ctx _args _value]
+                     {:user-id #uuid "550e8400-e29b-41d4-a716-446655440000"
+                      :user-name "Alice"
+                      :status :test.models.status/ACTIVE})
+          wrapped  (impl/wrap-resolver-with-encoding resolver [:maybe User])
+          result   (wrapped nil nil nil)]
+      (is (= #uuid "550e8400-e29b-41d4-a716-446655440000" (:userId result)))
+      (is (= "Alice" (:userName result)))
+      (is (= :User (:com.walmartlabs.lacinia.schema/type-name (meta result))))))
+
+  (testing "wrap-resolver-with-encoding handles nil for :maybe types"
+    (let [resolver (fn [_ctx _args _value] nil)
+          wrapped  (impl/wrap-resolver-with-encoding resolver [:maybe User])
+          result   (wrapped nil nil nil)]
+      (is (nil? result))))
+
   (testing "wrap-resolver-with-encoding handles nil results"
     (let [resolver (fn [_ctx _args _value] nil)
           wrapped  (impl/wrap-resolver-with-encoding resolver Person)

@@ -8,6 +8,7 @@
   (:require
    [cheshire.core :as json]
    [clojure.string :as str]
+   [clojure.tools.logging :as log]
    [com.walmartlabs.lacinia :as lacinia]
    [com.walmartlabs.lacinia.schema :as lacinia.schema]
    [com.walmartlabs.lacinia.util :as lacinia.util]
@@ -157,6 +158,7 @@
     (let [result (lacinia/execute compiled-schema query variables context)]
       (json-response result 200))
     (catch Exception e
+      (log/error e "Internal Error")
       (json-response
        {:errors [{:message (.getMessage e)
                   :type (or (some-> e ex-data :type name) "internal-error")}]}

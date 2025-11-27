@@ -84,9 +84,11 @@
                              :graphql/schema schema
                              :doc doc})]
     `(def ~resolver-sym
-       (impl/coerce-args
-        (mc/walk ~schema impl/->argument-type)
-        (fn ~@body)))))
+       (impl/wrap-resolver-with-encoding
+        (impl/coerce-args
+         (mc/walk ~schema impl/->argument-type)
+         (fn ~@body))
+        (mc/walk ~schema impl/->return-type)))))
 
 (defn collect-resolvers
   "Collects all GraphQL resolvers defined in a namespace.

@@ -144,26 +144,50 @@
     (fn [model]
       (get tag-map (dispatch-fn model)))))
 
+(defn- unwrap-schema
+  "Unwraps a schema, dereferencing and stripping `:maybe` and `:vector` wrappers.
+
+  Returns the innermost schema type for determining tagging behavior."
+  [schema]
+  (let [derefed     (-> schema mc/schema mc/deref)
+        schema-type (mc/type derefed)]
+    (case schema-type
+      :maybe (recur (first (mc/children derefed)))
+      :vector (recur (first (mc/children derefed)))
+      derefed)))
+
 (defn wrap-resolver-with-encoding
   "Wraps a resolver function to automatically encode its return value and apply Lacinia tags.
 
   Takes a resolver function and a return type schema. Returns a new resolver function that:
   1. Calls the original resolver
   2. Encodes the result using the return type schema
-  3. Tags the result with its concrete GraphQL type (for unions/interfaces)
+  3. Tags the result with its concrete GraphQL type (for unions/interfaces, uses dispatch;
+     for simple map types, uses the `:graphql/type` property directly)
   4. Returns the tagged result
 
-  If the result is `nil`, returns `nil` without encoding or tagging.
+  Handles `:maybe` and `:vector` wrapper types by unwrapping to find the inner type.
+  For scalar types (`:string`, `:int`, etc.), no tagging is applied since scalars don't
+  require type resolution. If the result is `nil`, returns `nil` without encoding or tagging.
   If the result is a collection, encodes and tags each element."
   [resolver return-type-schema]
-  (let [tagger         (merge-tag-with-type return-type-schema)
-        encode-and-tag (fn [value]
-                         (let [encoded (encode value return-type-schema)
-                               tag     (tagger value)]
-                           (schema/tag-with-type encoded tag)))]
-    (fn [ctx args value]
-      (let [result (resolver ctx args value)]
-        (cond
-          (nil? result) nil
-          (sequential? result) (mapv encode-and-tag result)
-          :else (encode-and-tag result))))))
+  (let [inner-schema (unwrap-schema return-type-schema)
+        schema-type  (mc/type inner-schema)
+        static-tag   (when (#{:map :enum} schema-type)
+                       (->graphql-type-name inner-schema))
+        tagger       (cond
+                       static-tag (constantly static-tag)
+                       (= :multi schema-type) (merge-tag-with-type inner-schema)
+                       :else nil)]
+    (if tagger
+      (let [encode-and-tag (fn [value]
+                             (let [encoded (encode value inner-schema)
+                                   tag     (tagger value)]
+                               (schema/tag-with-type encoded tag)))]
+        (fn [ctx args value]
+          (let [result (resolver ctx args value)]
+            (cond
+              (nil? result) nil
+              (sequential? result) (mapv encode-and-tag result)
+              :else (encode-and-tag result)))))
+      resolver)))

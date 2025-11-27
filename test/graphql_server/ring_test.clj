@@ -178,7 +178,6 @@
           response (handler request)]
       (is (= "not-graphql" (:body response))))))
 
-
 (deftest graphql-middleware-graphql-error-test
   (testing "graphql-middleware handles GraphQL errors"
     (let [handler  (ring/graphql-middleware

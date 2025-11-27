@@ -66,6 +66,46 @@
     :encoders
     {:enum (fn [value] (when value (name value)))}}))
 
+(def ^:private lacinia-type-tag-transformer
+  "Malli transformer that applies Lacinia type tags during encoding.
+
+  For `:multi` schemas (union types), uses the dispatch function to determine the
+  concrete type and tags the encoded value with `schema/tag-with-type`.
+  For `:map` schemas with `:graphql/type` or `:graphql/interface` properties,
+  tags with that type name."
+  (mt/transformer
+   {:encoders
+    {:multi
+     {:compile
+      (fn [schema _options]
+        (let [dispatch-fn (-> schema mc/properties :dispatch)
+              ;; Build map from dispatch value to GraphQL type name
+              tag-map     (->> (mc/children schema)
+                               (map (fn [[dispatch-val _props child-schema]]
+                                      (let [child     (mc/deref-all child-schema)
+                                            type-name (or (get (mc/properties child) :graphql/type)
+                                                          (get (mc/properties child) :graphql/interface))]
+                                        [dispatch-val (when type-name
+                                                        (csk/->PascalCaseKeyword type-name))])))
+                               (into {}))]
+          (fn [value]
+            (when value
+              (if-let [tag (get tag-map (dispatch-fn value))]
+                (schema/tag-with-type value tag)
+                value)))))}
+     :map
+     {:compile
+      (fn [schema _options]
+        (let [props     (mc/properties schema)
+              type-name (or (:graphql/type props)
+                            (:graphql/interface props))]
+          (if type-name
+            (let [tag (csk/->PascalCaseKeyword type-name)]
+              (fn [value]
+                (when value
+                  (schema/tag-with-type value tag))))
+            identity)))}}}))
+
 (def ^:private kebab-key-transformer
   "Malli transformer for map keys.
 
@@ -80,10 +120,12 @@
 
   Order of operations:
   1. Transform enum values (namespaced keyword -> string).
-  2. Transform map keys (kebab-case keyword -> camelCase keyword)."
+  2. Transform map keys (kebab-case keyword -> camelCase keyword).
+  3. Apply Lacinia type tags to maps and multi types."
   (mt/transformer
    enum-transformer
-   kebab-key-transformer))
+   kebab-key-transformer
+   lacinia-type-tag-transformer))
 
 (defn encode
   "Encodes application data into GraphQL output format according to the given Malli schema.
@@ -147,7 +189,7 @@
 (defn- unwrap-schema
   "Unwraps a schema, dereferencing and stripping `:maybe` and `:vector` wrappers.
 
-  Returns the innermost schema type for determining tagging behavior."
+  Returns the innermost schema type for encoding purposes."
   [schema]
   (let [derefed     (-> schema mc/schema mc/deref)
         schema-type (mc/type derefed)]
@@ -157,37 +199,22 @@
       derefed)))
 
 (defn wrap-resolver-with-encoding
-  "Wraps a resolver function to automatically encode its return value and apply Lacinia tags.
+  "Wraps a resolver function to automatically encode its return value.
 
   Takes a resolver function and a return type schema. Returns a new resolver function that:
   1. Calls the original resolver
-  2. Encodes the result using the return type schema
-  3. Tags the result with its concrete GraphQL type (for unions/interfaces, uses dispatch;
-     for simple map types, uses the `:graphql/type` property directly)
-  4. Returns the tagged result
+  2. Encodes the result using the return type schema (including Lacinia type tags)
+  3. Returns the encoded result
 
-  Handles `:maybe` and `:vector` wrapper types by unwrapping to find the inner type.
-  For scalar types (`:string`, `:int`, etc.), no tagging is applied since scalars don't
-  require type resolution. If the result is `nil`, returns `nil` without encoding or tagging.
-  If the result is a collection, encodes and tags each element."
+  The encoding transformer automatically applies Lacinia type tags to all nested
+  `:map` and `:multi` types that have `:graphql/type` or `:graphql/interface` properties.
+  If the result is `nil`, returns `nil` without encoding.
+  If the result is a collection, encodes each element with the unwrapped item schema."
   [resolver return-type-schema]
-  (let [inner-schema (unwrap-schema return-type-schema)
-        schema-type  (mc/type inner-schema)
-        static-tag   (when (#{:map :enum} schema-type)
-                       (->graphql-type-name inner-schema))
-        tagger       (cond
-                       static-tag (constantly static-tag)
-                       (= :multi schema-type) (merge-tag-with-type inner-schema)
-                       :else nil)]
-    (if tagger
-      (let [encode-and-tag (fn [value]
-                             (let [encoded (encode value inner-schema)
-                                   tag     (tagger value)]
-                               (schema/tag-with-type encoded tag)))]
-        (fn [ctx args value]
-          (let [result (resolver ctx args value)]
-            (cond
-              (nil? result) nil
-              (sequential? result) (mapv encode-and-tag result)
-              :else (encode-and-tag result)))))
-      resolver)))
+  (let [item-schema (unwrap-schema return-type-schema)]
+    (fn [ctx args value]
+      (let [result (resolver ctx args value)]
+        (cond
+          (nil? result) nil
+          (sequential? result) (mapv #(encode % item-schema) result)
+          :else (encode result return-type-schema))))))

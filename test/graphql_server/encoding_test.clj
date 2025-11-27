@@ -128,4 +128,32 @@
       (is (= "Alice" (:userName (first result))))
       (is (= :User (:com.walmartlabs.lacinia.schema/type-name (meta (first result)))))
       (is (= "Bob" (:userName (second result))))
-      (is (= :AdminUser (:com.walmartlabs.lacinia.schema/type-name (meta (second result))))))))
+      (is (= :AdminUser (:com.walmartlabs.lacinia.schema/type-name (meta (second result)))))))
+
+  (testing "wrap-resolver-with-encoding tags nested types in response wrapper"
+    (let [PageInfo [:map {:graphql/type :PageInfo}
+                    [:total :int]
+                    [:offset :int]]
+          Response [:map {:graphql/type :PeopleResponse}
+                    [:data [:vector Person]]
+                    [:page-info PageInfo]]
+          resolver (fn [_ctx _args _value]
+                     {:data [{:type :user
+                              :user-id #uuid "550e8400-e29b-41d4-a716-446655440000"
+                              :user-name "Alice"
+                              :status :test.models.status/ACTIVE}
+                             {:type :admin
+                              :user-id #uuid "660e8400-e29b-41d4-a716-446655440000"
+                              :user-name "Bob"
+                              :admin-level 5}]
+                      :page-info {:total 2 :offset 0}})
+          wrapped  (impl/wrap-resolver-with-encoding resolver Response)
+          result   (wrapped nil nil nil)]
+      ;; Top level wrapper is tagged
+      (is (= :PeopleResponse (:com.walmartlabs.lacinia.schema/type-name (meta result))))
+      ;; Nested items in :data vector are tagged with their concrete types
+      (is (= "Alice" (:userName (first (:data result)))))
+      (is (= :User (:com.walmartlabs.lacinia.schema/type-name (meta (first (:data result))))))
+      (is (= :AdminUser (:com.walmartlabs.lacinia.schema/type-name (meta (second (:data result))))))
+      ;; Nested pageInfo is tagged
+      (is (= :PageInfo (:com.walmartlabs.lacinia.schema/type-name (meta (:pageInfo result))))))))

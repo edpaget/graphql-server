@@ -72,6 +72,33 @@
       ;; The middleware adds {:middleware-applied true}
       (is (= {:result "test" :middleware-applied true} result)))))
 
+(deftest defresolver-field-resolver
+  (testing "defresolver allows field resolvers on custom object types"
+    (let [resolver-var  (ns-resolve 'graphql-server.test-resolvers 'User-fullName)
+          resolver-meta (meta resolver-var)]
+      (is (= [:User :fullName] (:graphql/resolver resolver-meta)))
+      (is (some? (:graphql/schema resolver-meta)))
+      (is (fn? @resolver-var)))))
+
+(deftest defresolver-field-resolver-with-docstring
+  (testing "field resolver accepts optional docstring"
+    (let [resolver-var  (ns-resolve 'graphql-server.test-resolvers 'User-fullName)
+          resolver-meta (meta resolver-var)]
+      (is (= "Computes the full name from first and last name" (:doc resolver-meta))))))
+
+(deftest defresolver-field-resolver-execution
+  (testing "field resolver extracts data from parent value"
+    (let [result (test-resolvers/User-fullName nil nil {:first-name "John" :last-name "Doe"})]
+      (is (= "John Doe" result)))))
+
+(deftest collect-resolvers-includes-field-resolvers
+  (testing "collect-resolvers gathers field resolvers from a namespace"
+    (let [resolvers (core/collect-resolvers 'graphql-server.test-resolvers)]
+      (is (contains? resolvers [:User :fullName]))
+      (let [[schema resolver-var] (get resolvers [:User :fullName])]
+        (is (some? schema))
+        (is (var? resolver-var))))))
+
 (deftest integration-with-schema
   (testing "defresolver works with ->graphql-schema"
     (let [gql-schema (schema/->graphql-schema test-resolvers/resolvers)]

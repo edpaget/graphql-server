@@ -6,7 +6,7 @@
 
   ## Defining Resolvers
 
-  Use [[defresolver]] to define Query and Mutation resolvers:
+  Use [[defresolver]] to define Query, Mutation, and field resolvers:
 
   ```clojure
   (defresolver :Query :users
@@ -19,6 +19,12 @@
     [:=> [:cat :any [:map [:name :string]] :any] User]
     [ctx {:keys [name]} value]
     (create-user name))
+
+  ;; Field resolver on a custom object type
+  (defresolver :User :fullName
+    [:=> [:cat :any :any [:map [:first-name :string] [:last-name :string]]] :string]
+    [ctx _args {:keys [first-name last-name]}]
+    (str first-name \" \" last-name))
   ```
 
   ## Collecting Resolvers
@@ -43,35 +49,48 @@
 (defmacro defresolver
   "Defines a GraphQL resolver function with Malli schema validation.
 
-  Creates a var named `object-action` (e.g., `Query-users`, `Mutation-createUser`)
+  Creates a var named `object-action` (e.g., `Query-users`, `Deck-cards`)
   with metadata indicating it's a GraphQL resolver. The resolver function automatically
   coerces arguments using the provided Malli schema.
 
-  The `object` must be `:Query` or `:Mutation`. The `action` is a keyword naming
+  The `object` is a keyword naming the GraphQL object type (`:Query`, `:Mutation`,
+  or any custom object type like `:User`, `:Deck`). The `action` is a keyword naming
   the GraphQL field.
 
   The schema must be a Malli `:=>` function schema describing a 3-arity function:
   `[:=> [:cat context-schema args-schema value-schema] return-schema]`
+
+  For field resolvers on custom object types, the `value-schema` describes the parent
+  object passed by Lacinia, allowing you to extract data from it.
 
   Arguments are automatically coerced and validated against `args-schema`. If validation
   fails, the resolver returns `{:errors validation-errors}`.
 
   Examples:
 
+      ;; Query resolver
       (defresolver :Query :users
         \"Fetches all users\"
         [:=> [:cat :any :any :any] [:vector User]]
         [ctx args value]
         (fetch-all-users))
 
+      ;; Mutation resolver
       (defresolver :Mutation :updateUser
         [:=> [:cat :any [:map [:id :uuid] [:name :string]] :any] User]
         [ctx {:keys [id name]} value]
-        (update-user id name))"
+        (update-user id name))
+
+      ;; Field resolver on custom object type
+      (defresolver :Deck :cards
+        \"Resolves cards for a deck\"
+        [:=> [:cat :any :any [:map [:card-slugs [:vector :string]]]] [:vector Card]]
+        [ctx _args {:keys [card-slugs]}]
+        (fetch-cards card-slugs))"
   [object action doc-or-schema & args]
-  (when-not (contains? #{:Query :Mutation} object)
-    (throw (ex-info "object must be :Query or :Mutation"
-                    {:object object :valid #{:Query :Mutation}})))
+  (when-not (keyword? object)
+    (throw (ex-info "object must be a keyword"
+                    {:object object})))
   (when-not (keyword? action)
     (throw (ex-info "action must be a keyword"
                     {:action action})))

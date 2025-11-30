@@ -28,4 +28,10 @@
   [_ctx _args _value]
   {})
 
+(defresolver :User :fullName
+  "Computes the full name from first and last name"
+  [:=> [:cat :any :any [:map [:first-name :string] [:last-name :string]]] :string]
+  [_ctx _args {:keys [first-name last-name]}]
+  (str first-name " " last-name))
+
 (def-resolver-map)

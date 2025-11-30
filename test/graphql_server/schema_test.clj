@@ -668,3 +668,79 @@
               :Role {:values #{"admin" "user" "guest"}}
               :Priority {:values #{"low" "medium" "high"}}}
              (:enums result))))))
+
+(deftest or-schema-with-graphql-scalar
+  (testing ":or schema with :graphql/scalar maps to specified scalar type"
+    (let [datetime-schema [:or {:graphql/scalar :Date}
+                           [:re #"\d{4}-\d{2}-\d{2}"]
+                           inst?]
+          event-schema    [:map {:graphql/type :Event}
+                           [:id :uuid]
+                           [:occurredAt datetime-schema]]
+          resolver-map    {[:Query :event]
+                           [[:=> [:cat :any :any :any] event-schema]
+                            (fn [_ _ _] {:id (random-uuid) :occurredAt "2024-01-15"})]}
+          result          (schema/->graphql-schema resolver-map)]
+      (is (= {:objects
+              {:Query
+               {:fields
+                {:event {:type '(non-null :Event)}}}
+               :Event
+               {:fields
+                {:id {:type '(non-null Uuid)}
+                 :occurredAt {:type '(non-null Date)}}}}}
+             result)))))
+
+(deftest or-schema-optional-with-graphql-scalar
+  (testing "Optional :or schema with :graphql/scalar becomes nullable"
+    (let [datetime-schema [:or {:graphql/scalar :Date}
+                           [:re #"\d{4}-\d{2}-\d{2}"]
+                           inst?]
+          event-schema    [:map {:graphql/type :Event}
+                           [:id :uuid]
+                           [:deletedAt {:optional true} datetime-schema]]
+          resolver-map    {[:Query :event]
+                           [[:=> [:cat :any :any :any] event-schema]
+                            (fn [_ _ _] {:id (random-uuid)})]}
+          result          (schema/->graphql-schema resolver-map)]
+      (is (= {:objects
+              {:Query
+               {:fields
+                {:event {:type '(non-null :Event)}}}
+               :Event
+               {:fields
+                {:id {:type '(non-null Uuid)}
+                 :deletedAt {:type 'Date}}}}}
+             result)))))
+
+(deftest or-schema-maybe-with-graphql-scalar
+  (testing ":maybe wrapping :or schema with :graphql/scalar becomes nullable"
+    (let [datetime-schema [:or {:graphql/scalar :Date}
+                           [:re #"\d{4}-\d{2}-\d{2}"]
+                           inst?]
+          event-schema    [:map {:graphql/type :Event}
+                           [:id :uuid]
+                           [:deletedAt [:maybe datetime-schema]]]
+          resolver-map    {[:Query :event]
+                           [[:=> [:cat :any :any :any] event-schema]
+                            (fn [_ _ _] {:id (random-uuid)})]}
+          result          (schema/->graphql-schema resolver-map)]
+      (is (= {:objects
+              {:Query
+               {:fields
+                {:event {:type '(non-null :Event)}}}
+               :Event
+               {:fields
+                {:id {:type '(non-null Uuid)}
+                 :deletedAt {:type 'Date}}}}}
+             result)))))
+
+(deftest or-schema-without-graphql-scalar-throws
+  (testing ":or schema without :graphql/scalar throws error"
+    (let [bad-schema   [:or [:re #"\d+"] :string]
+          resolver-map {[:Query :value]
+                        [[:=> [:cat :any :any :any] bad-schema]
+                         (fn [_ _ _] "123")]}]
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                            #":or schemas must have :graphql/scalar property"
+                            (schema/->graphql-schema resolver-map))))))

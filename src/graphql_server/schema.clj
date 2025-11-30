@@ -27,6 +27,7 @@
   - `{:graphql/type :TypeName}` - Marks a `:map` as a GraphQL object type
   - `{:graphql/interface :InterfaceName}` - Marks a `:map` as a GraphQL interface
   - `{:graphql/implements [Schema1 Schema2]}` - Object implements interfaces (must reference schemas, not keywords)
+  - `{:graphql/scalar :ScalarName}` - Maps a schema to a GraphQL scalar type (e.g., `:Date`, `:Uuid`)
   - `{:graphql/hidden true}` - Excludes a field from the GraphQL schema
 
   ## Examples
@@ -240,6 +241,13 @@
 (defmethod ->graphql-type :time/instant
   [_ _ _ _]
   [(list 'non-null 'Date) {}])
+
+(defmethod ->graphql-type :or
+  [schema _ _ _]
+  (if-let [scalar-type (-> schema mc/properties :graphql/scalar)]
+    [(list 'non-null (symbol (name scalar-type))) {}]
+    (throw (ex-info ":or schemas must have :graphql/scalar property for GraphQL conversion"
+                    {:schema (mc/form schema)}))))
 
 (defmethod ->graphql-type :maybe
   [_ _ children _]

@@ -387,24 +387,39 @@
 (defn ->graphql-schema
   "Converts resolver definitions into a Lacinia-compatible GraphQL schema.
 
-  Takes a `resolver-map` where keys are `[object-type field-name]` tuples (e.g., `[:Query :user]`)
-  and values are `[malli-schema resolver-fn]` or `[malli-schema resolver-fn description]` tuples.
-  The Malli schema must describe a 3-arity resolver function using `[:=> [:cat context args value] return-type]`.
+  Takes a `resolver-map` where keys are `[object-type field-name]` tuples (e.g., `[:Query :user]`,
+  `[:Subscription :gameUpdated]`) and values are `[malli-schema resolver-fn]` or
+  `[malli-schema resolver-fn description]` tuples.
+
+  The Malli schema must describe a function using `[:=> [:cat context args value] return-type]`.
+  For subscriptions, the return type represents the type of each streamed value.
   The optional description string will be added to the GraphQL field.
 
-  Returns a map containing `:objects`, `:interfaces`, `:unions`, `:enums`, and `:input-objects`
-  with the complete GraphQL schema. All nested types are automatically discovered and registered.
+  Returns a map containing `:objects`, `:subscriptions`, `:interfaces`, `:unions`, `:enums`,
+  and `:input-objects` with the complete GraphQL schema. Subscription fields are placed under
+  `:subscriptions` (Lacinia's native format) rather than under `:objects`.
 
   See the namespace documentation for detailed examples and usage patterns."
   [resolver-map]
   (reduce (fn [acc [[object field] tuple]]
-            (if (contains? #{:Query :Mutation} object)
+            (cond
+              (contains? #{:Query :Mutation} object)
               (let [[schema _resolver description] tuple
                     [field-def field-types]        (mc/walk schema (compile-function object))
                     field-def-with-desc            (cond-> field-def
                                                      description (assoc :description description))
                     merged-types                   (merge-with merge acc field-types)]
                 (assoc-in merged-types [:objects object :fields (csk/->camelCaseKeyword field)] field-def-with-desc))
+
+              (= :Subscription object)
+              (let [[schema _streamer description] tuple
+                    [field-def field-types]        (mc/walk schema (compile-function object))
+                    field-def-with-desc            (cond-> field-def
+                                                     description (assoc :description description))
+                    merged-types                   (merge-with merge acc field-types)]
+                (assoc-in merged-types [:subscriptions (csk/->camelCaseKeyword field)] field-def-with-desc))
+
+              :else
               acc))
           {}
           resolver-map))

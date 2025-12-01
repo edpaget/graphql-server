@@ -894,3 +894,97 @@
                :Point {:fields {:id {:type '(non-null Uuid)}
                                 :position {:type 'HexPosition}}}}}
              result)))))
+
+;; =============================================================================
+;; Subscription schema tests
+;; =============================================================================
+
+(deftest simple-subscription-with-string-return
+  (testing "Subscription field returning string goes under :subscriptions"
+    (let [resolver-map {[:Subscription :message]
+                        [[:=> [:cat :any :any :any] :string]
+                         (fn [_ _] nil)]}
+          result       (schema/->graphql-schema resolver-map)]
+      (is (= {:subscriptions
+              {:message {:type '(non-null String)}}}
+             result)))))
+
+(deftest subscription-with-object-return
+  (testing "Subscription field returning custom object type"
+    (let [game-schema  [:map {:graphql/type :GameState}
+                        [:id :uuid]
+                        [:phase :string]]
+          resolver-map {[:Subscription :gameUpdated]
+                        [[:=> [:cat :any :any :any] game-schema]
+                         (fn [_ _] nil)]}
+          result       (schema/->graphql-schema resolver-map)]
+      (is (= {:subscriptions
+              {:gameUpdated {:type '(non-null :GameState)}}
+              :objects
+              {:GameState
+               {:fields
+                {:id {:type '(non-null Uuid)}
+                 :phase {:type '(non-null String)}}}}}
+             result)))))
+
+(deftest subscription-with-args
+  (testing "Subscription field with arguments"
+    (let [resolver-map {[:Subscription :gameUpdated]
+                        [[:=> [:cat :any [:map [:game-id :uuid]] :any] :string]
+                         (fn [_ _] nil)]}
+          result       (schema/->graphql-schema resolver-map)]
+      (is (= {:subscriptions
+              {:gameUpdated {:type '(non-null String)
+                             :args {:gameId {:type '(non-null Uuid)}}}}}
+             result)))))
+
+(deftest subscription-with-description
+  (testing "Subscription field with description"
+    (let [resolver-map {[:Subscription :gameUpdated]
+                        [[:=> [:cat :any :any :any] :string]
+                         (fn [_ _] nil)
+                         "Subscribe to game state changes"]}
+          result       (schema/->graphql-schema resolver-map)]
+      (is (= {:subscriptions
+              {:gameUpdated {:type '(non-null String)
+                             :description "Subscribe to game state changes"}}}
+             result)))))
+
+(deftest subscription-with-enum-return
+  (testing "Subscription field returning enum"
+    (let [status-enum  [:enum {:graphql/type :GameStatus} :waiting :active :finished]
+          resolver-map {[:Subscription :statusChanged]
+                        [[:=> [:cat :any :any :any] status-enum]
+                         (fn [_ _] nil)]}
+          result       (schema/->graphql-schema resolver-map)]
+      (is (= {:subscriptions
+              {:statusChanged {:type '(non-null :GameStatus)}}
+              :enums
+              {:GameStatus {:values #{"WAITING" "ACTIVE" "FINISHED"}}}}
+             result)))))
+
+(deftest mixed-queries-mutations-subscriptions
+  (testing "Schema with queries, mutations, and subscriptions"
+    (let [game-schema  [:map {:graphql/type :Game}
+                        [:id :uuid]
+                        [:status :string]]
+          resolver-map {[:Query :game]
+                        [[:=> [:cat :any [:map [:id :uuid]] :any] game-schema]
+                         (fn [_ _ _] nil)]
+                        [:Mutation :createGame]
+                        [[:=> [:cat :any :any :any] game-schema]
+                         (fn [_ _ _] nil)]
+                        [:Subscription :gameUpdated]
+                        [[:=> [:cat :any [:map [:game-id :uuid]] :any] game-schema]
+                         (fn [_ _] nil)]}
+          result       (schema/->graphql-schema resolver-map)]
+      (is (= {:objects
+              {:Query {:fields {:game {:type '(non-null :Game)
+                                       :args {:id {:type '(non-null Uuid)}}}}}
+               :Mutation {:fields {:createGame {:type '(non-null :Game)}}}
+               :Game {:fields {:id {:type '(non-null Uuid)}
+                               :status {:type '(non-null String)}}}}
+              :subscriptions
+              {:gameUpdated {:type '(non-null :Game)
+                             :args {:gameId {:type '(non-null Uuid)}}}}}
+             result)))))

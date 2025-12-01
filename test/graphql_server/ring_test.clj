@@ -3,9 +3,11 @@
    [cheshire.core :as json]
    [clojure.string :as str]
    [clojure.test :refer [deftest is testing]]
-   [graphql-server.core :refer [defresolver def-resolver-map]]
+   [graphql-server.core :refer [defresolver defstreamer def-resolver-map]]
    [graphql-server.ring :as ring]
-   [java-time.api :as t]))
+   [graphql-server.subscriptions :as subs]
+   [java-time.api :as t])
+  (:import [java.io InputStream]))
 
 (defresolver :Query :hello
   [:=> [:cat :any :any :any] :string]
@@ -41,6 +43,14 @@
   [:=> [:cat :any [:map [:text :string]] :any] :string]
   [_ctx {:keys [text]} _value]
   (str "Created: " text))
+
+(defstreamer :Subscription :onMessage
+  "Test subscription streamer"
+  [:=> [:cat :any :any :any] :string]
+  [ctx _args]
+  (let [sub-mgr (:subscription-manager ctx)
+        ch      (subs/subscribe! sub-mgr [:messages])]
+    ch))
 
 (def-resolver-map)
 
@@ -212,3 +222,107 @@
                     :uri "/graphql"}
           response (handler request)]
       (is (= "not-graphql" (:body response))))))
+
+;; Subscription tests
+
+(deftest subscription-disabled-by-default-test
+  (testing "subscription endpoint is disabled by default"
+    (let [handler  (ring/graphql-middleware
+                    passthrough-handler
+                    {:resolver-map resolvers})
+          request  {:request-method :get
+                    :uri "/graphql/subscriptions"
+                    :query-string "query=subscription%20%7B%20onMessage%20%7D"}
+          response (handler request)]
+      (is (= "not-graphql" (:body response))))))
+
+(deftest subscription-endpoint-returns-sse-test
+  (testing "subscription endpoint returns SSE response when enabled"
+    (let [sub-mgr  (subs/create-subscription-manager)
+          handler  (ring/graphql-middleware
+                    passthrough-handler
+                    {:resolver-map resolvers
+                     :enable-subscriptions? true
+                     :context-fn (fn [_] {:subscription-manager sub-mgr})})
+          request  {:request-method :get
+                    :uri "/graphql/subscriptions"
+                    :query-string "query=subscription%20%7B%20onMessage%20%7D"}
+          response (handler request)]
+      (is (= 200 (:status response)))
+      (is (= "text/event-stream" (get-in response [:headers "Content-Type"])))
+      (is (instance? InputStream (:body response))))))
+
+(deftest subscription-and-graphiql-coexist-test
+  (testing "subscriptions and GraphiQL work together with default paths"
+    (let [sub-mgr           (subs/create-subscription-manager)
+          handler           (ring/graphql-middleware
+                             passthrough-handler
+                             {:resolver-map resolvers
+                              :enable-subscriptions? true
+                              :context-fn (fn [_] {:subscription-manager sub-mgr})})
+          graphiql-req      {:request-method :get
+                             :uri "/graphql"}
+          subscription-req  {:request-method :get
+                             :uri "/graphql/subscriptions"
+                             :query-string "query=subscription%20%7B%20onMessage%20%7D"}
+          graphiql-resp     (handler graphiql-req)
+          subscription-resp (handler subscription-req)]
+      ;; GraphiQL served at /graphql
+      (is (= 200 (:status graphiql-resp)))
+      (is (= "text/html" (get-in graphiql-resp [:headers "Content-Type"])))
+      (is (str/includes? (:body graphiql-resp) "GraphiQL"))
+      ;; Subscriptions handled at /graphql/subscriptions
+      (is (= 200 (:status subscription-resp)))
+      (is (= "text/event-stream" (get-in subscription-resp [:headers "Content-Type"]))))))
+
+(deftest subscription-options-preflight-test
+  (testing "subscription endpoint handles OPTIONS preflight"
+    (let [handler  (ring/graphql-middleware
+                    passthrough-handler
+                    {:resolver-map resolvers
+                     :enable-subscriptions? true})
+          request  {:request-method :options
+                    :uri "/graphql/subscriptions"}
+          response (handler request)]
+      (is (= 204 (:status response)))
+      (is (= "GET, OPTIONS" (get-in response [:headers "Access-Control-Allow-Methods"])))
+      (is (= "*" (get-in response [:headers "Access-Control-Allow-Origin"]))))))
+
+(deftest subscription-custom-cors-origin-test
+  (testing "subscription endpoint uses custom CORS origin"
+    (let [sub-mgr      (subs/create-subscription-manager)
+          handler      (ring/graphql-middleware
+                        passthrough-handler
+                        {:resolver-map resolvers
+                         :enable-subscriptions? true
+                         :cors-origin "https://example.com"
+                         :context-fn (fn [_] {:subscription-manager sub-mgr})})
+          options-req  {:request-method :options
+                        :uri "/graphql/subscriptions"}
+          sub-req      {:request-method :get
+                        :uri "/graphql/subscriptions"
+                        :query-string "query=subscription%20%7B%20onMessage%20%7D"}
+          options-resp (handler options-req)
+          sub-resp     (handler sub-req)]
+      (is (= "https://example.com" (get-in options-resp [:headers "Access-Control-Allow-Origin"])))
+      (is (= "https://example.com" (get-in sub-resp [:headers "Access-Control-Allow-Origin"]))))))
+
+(deftest subscription-missing-query-test
+  (testing "subscription endpoint returns error for missing query"
+    (let [handler  (ring/graphql-middleware
+                    passthrough-handler
+                    {:resolver-map resolvers
+                     :enable-subscriptions? true})
+          request  {:request-method :get
+                    :uri "/graphql/subscriptions"
+                    :query-string ""}
+          response (handler request)
+          body     (json/parse-string (:body response) true)]
+      (is (= 400 (:status response)))
+      (is (str/includes? (get-in body [:errors 0 :message]) "Missing query")))))
+
+(deftest build-lacinia-schema-with-streamers-test
+  (testing "build-lacinia-schema compiles schema with subscription streamers"
+    (let [schema (ring/build-lacinia-schema resolvers)]
+      (is (some? schema))
+      (is (map? schema)))))

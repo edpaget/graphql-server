@@ -4,15 +4,24 @@
   Provides Ring middleware that intercepts GraphQL requests and executes queries
   via Lacinia. Expects the request body to be pre-parsed JSON (a Clojure map).
   Use standard Ring JSON middleware like `ring.middleware.json/wrap-json-body`
-  before this middleware."
+  before this middleware.
+
+  Supports GraphQL subscriptions via Server-Sent Events (SSE) when enabled.
+  See [[graphql-middleware]] for subscription configuration options."
   (:require
+   [camel-snake-kebab.core :as csk]
    [cheshire.core :as json]
+   [clojure.core.async :as async]
    [clojure.string :as str]
    [clojure.tools.logging :as log]
    [com.walmartlabs.lacinia :as lacinia]
+   [com.walmartlabs.lacinia.constants :as lacinia.constants]
+   [com.walmartlabs.lacinia.executor :as lacinia.executor]
+   [com.walmartlabs.lacinia.parser :as lacinia.parser]
    [com.walmartlabs.lacinia.schema :as lacinia.schema]
    [com.walmartlabs.lacinia.util :as lacinia.util]
    [graphql-server.schema :as schema]
+   [graphql-server.sse :as sse]
    [java-time.api :as t]
    [ring.util.response :as response]))
 
@@ -47,12 +56,23 @@
 (defn- tuple-keys->qualified-keywords
   "Converts resolver map keys from tuples to qualified keywords.
 
-  Transforms `{[:Query :hello] [schema fn]}` to `{:Query/hello fn}`."
-  [resolver-map]
-  (reduce-kv (fn [m [object action] [_schema resolver-fn]]
-               (assoc m (keyword (name object) (name action)) resolver-fn))
-             {}
-             resolver-map))
+  Transforms `{[:Query :hello] [schema fn]}` to `{:Query/hello fn}`.
+  Optionally filters by object type when `filter-objects` is provided.
+  The `namespace-override` can be used to change the namespace (e.g., for
+  subscriptions which use `:subscriptions/field` format in Lacinia)."
+  ([resolver-map]
+   (tuple-keys->qualified-keywords resolver-map nil nil))
+  ([resolver-map filter-objects]
+   (tuple-keys->qualified-keywords resolver-map filter-objects nil))
+  ([resolver-map filter-objects namespace-override]
+   (reduce-kv (fn [m [object action] [_schema resolver-fn]]
+                (if (or (nil? filter-objects)
+                        (contains? filter-objects object))
+                  (let [ns-name (or namespace-override (name object))]
+                    (assoc m (keyword ns-name (csk/->camelCase (name action))) resolver-fn))
+                  m))
+              {}
+              resolver-map)))
 
 (defn- apply-custom-scalars
   "Applies custom scalar definitions to the schema.
@@ -74,6 +94,10 @@
   by [[graphql-server.core/collect-resolvers]] or [[graphql-server.core/def-resolver-map]])
   and returns a compiled Lacinia schema ready for execution.
 
+  The resolver map may include both Query/Mutation resolvers and Subscription
+  streamers. Resolvers are injected via `inject-resolvers`, streamers via
+  `inject-streamers`.
+
   The schema includes built-in scalar types for Date, UUID, and Json.
 
   Optionally accepts a map of custom scalars where keys are scalar names (keywords)
@@ -83,13 +107,17 @@
   ([resolver-map]
    (build-lacinia-schema resolver-map {}))
   ([resolver-map custom-scalars]
-   (-> (schema/->graphql-schema resolver-map)
-       date-scalar
-       uuid-scalar
-       json-scalar
-       (apply-custom-scalars custom-scalars)
-       (lacinia.util/inject-resolvers (tuple-keys->qualified-keywords resolver-map))
-       lacinia.schema/compile)))
+   (let [resolvers (tuple-keys->qualified-keywords resolver-map #{:Query :Mutation})
+         streamers (tuple-keys->qualified-keywords resolver-map #{:Subscription} "subscriptions")]
+     (-> (schema/->graphql-schema resolver-map)
+         date-scalar
+         uuid-scalar
+         json-scalar
+         (apply-custom-scalars custom-scalars)
+         (lacinia.util/inject-resolvers resolvers)
+         (cond-> (seq streamers)
+           (lacinia.util/inject-streamers streamers))
+         lacinia.schema/compile))))
 
 (defn- json-response
   "Creates a Ring JSON response with the given data and status code."
@@ -196,6 +224,54 @@
                   :type (or (some-> e ex-data :type name) "internal-error")}]}
        500))))
 
+(defn- execute-subscription
+  "Executes a GraphQL subscription query via SSE.
+
+  Parses the subscription query, invokes the streamer, and returns an SSE
+  streaming response. The streamer pushes values to a channel which are
+  then streamed to the client as SSE events."
+  [compiled-schema query variables context cors-origin]
+  (try
+    (let [parsed-query   (-> compiled-schema
+                             (lacinia.parser/parse-query query)
+                             (lacinia.parser/prepare-with-query-variables variables))
+          result-channel (async/chan 10)
+          source-stream  (fn [value]
+                           (if (nil? value)
+                             (async/close! result-channel)
+                             (async/put! result-channel
+                                         {:type :data
+                                          :data {:data value}}))
+                           nil)
+          _cleanup-fn    (lacinia.executor/invoke-streamer
+                          (assoc context
+                                 lacinia.constants/parsed-query-key parsed-query)
+                          source-stream)]
+      (async/put! result-channel {:type :connected :data {:subscription "active"}})
+      (sse/sse-response result-channel :cors-origin cors-origin))
+    (catch Exception e
+      (log/error e "Subscription error")
+      (json-response
+       {:errors [{:message (.getMessage e)
+                  :type (or (some-> e ex-data :type name) "subscription-error")}]}
+       400))))
+
+(defn- parse-query-params
+  "Parses query and variables from request query string."
+  [request]
+  (let [query-string (:query-string request)
+        params       (when query-string
+                       (into {}
+                             (for [pair  (str/split query-string #"&")
+                                   :let  [[k v] (str/split pair #"=" 2)]
+                                   :when (and k v)]
+                               [(keyword k) (java.net.URLDecoder/decode v "UTF-8")])))]
+    {:query     (:query params)
+     :variables (when-let [vars (:variables params)]
+                  (try
+                    (json/parse-string vars true)
+                    (catch Exception _ nil)))}))
+
 (defn graphql-middleware
   "Ring middleware that handles GraphQL requests at a specified endpoint.
 
@@ -217,39 +293,78 @@
   - `:scalars` - Optional map of custom scalar definitions. Keys are scalar names (keywords),
                  values are maps with `:parse` and `:serialize` functions.
 
+  Subscription options (for real-time updates via SSE):
+  - `:enable-subscriptions?` - Whether to enable subscription endpoint (default: `false`)
+  - `:subscription-path` - Path for subscription endpoint (default: `/graphql/subscriptions`)
+  - `:cors-origin` - CORS origin for SSE responses (default: `\"*\"`)
+
   Example:
 
-      (require '[ring.middleware.json :refer [wrap-json-body]])
+      (require '[ring.middleware.json :refer [wrap-json-body]]
+               '[graphql-server.subscriptions :as subs])
+
+      (def subscription-manager (subs/create-subscription-manager))
 
       (def app
         (-> handler
             (graphql-middleware {:resolver-map my-resolvers
                                  :path \"/api/graphql\"
-                                 :context-fn (fn [req] {:user (:user req)})
+                                 :context-fn (fn [req]
+                                               {:user (:user req)
+                                                :subscription-manager subscription-manager})
                                  :scalars {:HexPosition {:parse vec :serialize identity}}
-                                 :enable-graphiql? true})
+                                 :enable-graphiql? true
+                                 :enable-subscriptions? true
+                                 :subscription-path \"/api/graphql/subscriptions\"})
             (wrap-json-body {:keywords? true})))"
-  [handler {:keys [path resolver-map context-fn enable-graphiql? scalars]
+  [handler {:keys [path resolver-map context-fn enable-graphiql? scalars
+                   enable-subscriptions? subscription-path cors-origin]
             :or {path "/graphql"
                  context-fn (fn [req] {:request req})
                  enable-graphiql? true
-                 scalars {}}}]
+                 scalars {}
+                 enable-subscriptions? false
+                 subscription-path "/graphql/subscriptions"
+                 cors-origin "*"}}]
   (let [compiled-schema (build-lacinia-schema resolver-map scalars)]
     (fn [request]
-      (cond
-        ;; POST requests - execute GraphQL
-        (and (= :post (:request-method request))
-             (str/starts-with? (:uri request) path))
-        (let [{:keys [query variables]} (:body request)
-              context                   (context-fn request)]
-          (execute-graphql compiled-schema query variables context))
+      (let [uri    (:uri request)
+            method (:request-method request)]
+        (cond
+          ;; Subscription OPTIONS preflight
+          (and enable-subscriptions?
+               (= method :options)
+               (str/starts-with? uri subscription-path))
+          {:status  204
+           :headers {"Access-Control-Allow-Origin"  cors-origin
+                     "Access-Control-Allow-Methods" "GET, OPTIONS"
+                     "Access-Control-Allow-Headers" "Content-Type, Authorization"
+                     "Access-Control-Max-Age"       "86400"}}
 
-        ;; GET requests - serve GraphiQL
-        (and enable-graphiql?
-             (= :get (:request-method request))
-             (str/starts-with? (:uri request) path))
-        (graphiql-response path)
+          ;; Subscription GET requests - execute subscription via SSE
+          (and enable-subscriptions?
+               (= method :get)
+               (str/starts-with? uri subscription-path))
+          (let [{:keys [query variables]} (parse-query-params request)
+                context                   (context-fn request)]
+            (if query
+              (execute-subscription compiled-schema query variables context cors-origin)
+              (json-response {:errors [{:message "Missing query parameter"}]} 400)))
 
-        ;; Other requests - pass through
-        :else
-        (handler request)))))
+          ;; POST requests - execute GraphQL query/mutation
+          (and (= method :post)
+               (str/starts-with? uri path))
+          (let [{:keys [query variables]} (:body request)
+                context                   (context-fn request)]
+            (execute-graphql compiled-schema query variables context))
+
+          ;; GET requests to main path - serve GraphiQL
+          (and enable-graphiql?
+               (= method :get)
+               (str/starts-with? uri path)
+               (not (str/starts-with? uri subscription-path)))
+          (graphiql-response path)
+
+          ;; Other requests - pass through
+          :else
+          (handler request))))))

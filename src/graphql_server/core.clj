@@ -2,7 +2,8 @@
   "Core GraphQL server functionality wrapping Lacinia with Malli schemas.
 
   Provides [[defresolver]] macro for defining GraphQL resolvers with Malli schemas,
-  and utilities for collecting and organizing resolvers by namespace.
+  [[defstreamer]] macro for defining GraphQL subscription streamers, and utilities
+  for collecting and organizing resolvers by namespace.
 
   ## Defining Resolvers
 
@@ -27,22 +28,38 @@
     (str first-name \" \" last-name))
   ```
 
-  ## Collecting Resolvers
+  ## Defining Subscription Streamers
 
-  Resolvers are defined as vars with metadata. Collect them into a map:
+  Use [[defstreamer]] to define GraphQL subscription streamers. The body must return
+  a core.async channel - the macro handles the go-loop and encoding automatically:
+
+  ```clojure
+  (defstreamer :Subscription :gameUpdated
+    \"Subscribe to game state changes\"
+    [:=> [:cat :any [:map [:game-id :uuid]] :any] GameState]
+    [ctx {:keys [game-id]}]
+    (let [sub-mgr (:subscription-manager ctx)]
+      (subscribe! sub-mgr [:game game-id])))
+  ```
+
+  ## Collecting Resolvers and Streamers
+
+  Resolvers and streamers are defined as vars with metadata. Collect them into a map:
 
   ```clojure
   ;; Automatic collection at namespace end
-  (def-resolver-map)  ; Creates 'resolvers var
+  (def-resolver-map)  ; Creates 'resolvers var with both resolvers and streamers
 
   ;; Or collect programmatically
   (def my-resolvers (collect-resolvers 'my.namespace))
+  (def my-streamers (collect-streamers 'my.namespace))
 
   ;; Merge resolvers from multiple namespaces
   (require '[graphql-server.schema :as schema])
   (schema/->graphql-schema (merge resolver-map-1 resolver-map-2))
   ```"
   (:require
+   [clojure.core.async :as async]
    [graphql-server.impl :as impl]
    [malli.core :as mc]))
 
@@ -109,6 +126,88 @@
          (fn ~@body))
         (mc/walk ~schema impl/->return-type)))))
 
+(defmacro defstreamer
+  "Defines a GraphQL subscription streamer with Malli schema validation.
+
+  Creates a var named `Subscription-action` (e.g., `Subscription-gameUpdated`)
+  with metadata indicating it's a GraphQL streamer. The streamer function automatically
+  coerces arguments and encodes streamed values using the provided Malli schema.
+
+  The body must return a core.async channel. The macro handles:
+  - Setting up the go-loop to pump values from the channel to the source-stream
+  - Encoding each value using the return type schema (camelCase, enums, type tags)
+  - Cleanup when the channel closes or subscription ends
+
+  The schema must be a Malli `:=>` function schema:
+  `[:=> [:cat context-schema args-schema :any] return-schema]`
+
+  Note: The third element of the `:cat` is ignored for streamers (there's no parent value).
+  The return-schema describes the type of each streamed value.
+
+  Arguments are automatically coerced and validated against `args-schema`. If validation
+  fails, the streamer returns `{:errors validation-errors}` before subscribing.
+
+  Examples:
+
+      ;; Simple subscription
+      (defstreamer :Subscription :messageAdded
+        \"Subscribe to new messages\"
+        [:=> [:cat :any :any :any] Message]
+        [ctx _args]
+        (subscribe! (:sub-mgr ctx) [:messages]))
+
+      ;; Subscription with arguments
+      (defstreamer :Subscription :gameUpdated
+        [:=> [:cat :any [:map [:game-id :uuid]] :any] GameState]
+        [ctx {:keys [game-id]}]
+        (subscribe! (:sub-mgr ctx) [:game game-id]))
+
+      ;; With transform using core.async primitives
+      (defstreamer :Subscription :lobbyUpdated
+        [:=> [:cat :any :any :any] Game]
+        [ctx _args]
+        (let [raw-ch (subscribe! (:sub-mgr ctx) [:lobby])]
+          (async/pipe raw-ch (async/chan 10 (map :data)))))"
+  [object action doc-or-schema & args]
+  (when-not (= :Subscription object)
+    (throw (ex-info "defstreamer object must be :Subscription"
+                    {:object object})))
+  (when-not (keyword? action)
+    (throw (ex-info "action must be a keyword"
+                    {:action action})))
+  (let [[doc schema body]          (if (string? doc-or-schema)
+                                     [doc-or-schema (first args) (rest args)]
+                                     [nil doc-or-schema args])
+        streamer-sym               (with-meta
+                                     (symbol (str (name object) "-" (name action)))
+                                     {:graphql/streamer [object action]
+                                      :graphql/schema schema
+                                      :doc doc})
+        ;; Extract just the args binding from the 2-element body args vector
+        [ctx-binding args-binding] (first body)
+        user-body                  (rest body)]
+    `(def ~streamer-sym
+       (let [arg-schema#    (mc/walk ~schema impl/->argument-type)
+             return-schema# (mc/walk ~schema impl/->return-type)
+             encode-fn#     (impl/make-stream-encoder return-schema#)
+             coerce#        (mc/coercer arg-schema#
+                                        (malli.transform/transformer
+                                         (malli.transform/key-transformer
+                                          {:decode camel-snake-kebab.core/->kebab-case-keyword})
+                                         malli.transform/string-transformer))]
+         (fn [~ctx-binding args# source-stream#]
+           (let [coerced# (coerce# (or args# {}))]
+             (if-not (mc/validate arg-schema# coerced#)
+               {:errors (malli.error/humanize (mc/explain arg-schema# coerced#))}
+               (let [~args-binding coerced#
+                     ch#           (do ~@user-body)]
+                 (async/go-loop []
+                   (if-let [value# (async/<! ch#)]
+                     (do (source-stream# (encode-fn# value#))
+                         (recur))
+                     (source-stream# nil)))
+                 #(async/close! ch#)))))))))
+
 (defn collect-resolvers
   "Collects all GraphQL resolvers defined in a namespace.
 
@@ -128,6 +227,28 @@
        vals
        (keep (fn [v]
                (when-let [[object action] (:graphql/resolver (meta v))]
+                 [[object action]
+                  [(:graphql/schema (meta v)) v]])))
+       (into {})))
+
+(defn collect-streamers
+  "Collects all GraphQL subscription streamers defined in a namespace.
+
+  Scans the namespace for vars with `:graphql/streamer` metadata and returns
+  a map suitable for passing to [[graphql-server.schema/->graphql-schema]].
+
+  The map keys are `[object action]` tuples (e.g., `[:Subscription :gameUpdated]`)
+  and values are `[schema streamer-var]` tuples.
+
+  Example:
+
+      (collect-streamers 'my.app.subscriptions)
+      ;=> {[:Subscription :gameUpdated] [schema #'my.app.subscriptions/Subscription-gameUpdated]}"
+  [ns-sym]
+  (->> (ns-publics ns-sym)
+       vals
+       (keep (fn [v]
+               (when-let [[object action] (:graphql/streamer (meta v))]
                  [[object action]
                   [(:graphql/schema (meta v)) v]])))
        (into {})))
@@ -164,13 +285,16 @@
     resolver-map))
 
 (defmacro def-resolver-map
-  "Defines a var named `resolvers` containing all GraphQL resolvers in the current namespace.
+  "Defines a var named `resolvers` containing all GraphQL resolvers and streamers
+  in the current namespace.
 
-  Call this macro at the end of a namespace that defines resolvers with [[defresolver]].
-  It scans the namespace and collects all resolver definitions into a map.
+  Call this macro at the end of a namespace that defines resolvers with [[defresolver]]
+  and/or streamers with [[defstreamer]]. It scans the namespace and collects all
+  resolver and streamer definitions into a single map suitable for schema generation.
 
   Optionally accepts a docstring and/or a vector of middleware functions. Middleware
   functions wrap each resolver and are applied left-to-right (first middleware is outermost).
+  Note: Middleware is only applied to resolvers, not streamers.
 
   Examples:
 
@@ -204,6 +328,8 @@
         ns-sym           (ns-name *ns*)
         def-form         `(def ~'resolvers
                             ~@(when doc [doc])
-                            (apply-middleware ~(or middleware [])
-                                              (collect-resolvers '~ns-sym)))]
+                            (merge
+                             (apply-middleware ~(or middleware [])
+                                               (collect-resolvers '~ns-sym))
+                             (collect-streamers '~ns-sym)))]
     def-form))

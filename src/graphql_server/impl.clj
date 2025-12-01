@@ -246,3 +246,21 @@
           (nil? result) nil
           (sequential? result) (mapv #(encode % item-schema) result)
           :else (encode result return-type-schema))))))
+
+(defn make-stream-encoder
+  "Creates an encoder function for subscription streamed values.
+
+  Takes a return type schema (from the `:=>` function schema) and returns a function
+  that encodes individual values. Handles `:maybe` and `:vector` wrappers by encoding
+  against the unwrapped item schema.
+
+  Used by [[graphql-server.core/defstreamer]] to encode each value as it flows through
+  the subscription channel, using the same transformation logic as resolver encoding:
+  - kebab-case -> camelCase key transformation
+  - Enum encoding (keywords -> SCREAMING_SNAKE_CASE)
+  - Type tagging for unions/interfaces"
+  [return-type-schema]
+  (let [item-schema (unwrap-schema return-type-schema)]
+    (fn [value]
+      (when value
+        (encode value item-schema)))))

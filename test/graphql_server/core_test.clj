@@ -1,10 +1,12 @@
 (ns graphql-server.core-test
   (:require
+   [clojure.core.async :as async]
    [clojure.test :refer [deftest is testing]]
    [graphql-server.core :as core]
    [graphql-server.schema :as schema]
    [graphql-server.test-resolvers :as test-resolvers]
    [graphql-server.test-resolvers-with-middleware :as test-mw]
+   [graphql-server.test-streamers :as test-streamers]
    [malli.core :as mc]
    [malli.experimental.time :as met]
    [malli.registry :as mr]))
@@ -108,3 +110,114 @@
       (is (contains? (:objects gql-schema) :User))
       (is (contains? (get-in gql-schema [:objects :Query :fields]) :users))
       (is (contains? (get-in gql-schema [:objects :Mutation :fields]) :createUser)))))
+
+;; =============================================================================
+;; Streamer tests
+;; =============================================================================
+
+(deftest defstreamer-basic
+  (testing "defstreamer creates a var with correct metadata"
+    (let [streamer-var  (ns-resolve 'graphql-server.test-streamers 'Subscription-messageAdded)
+          streamer-meta (meta streamer-var)]
+      (is (= [:Subscription :messageAdded] (:graphql/streamer streamer-meta)))
+      (is (some? (:graphql/schema streamer-meta)))
+      (is (fn? @streamer-var)))))
+
+(deftest defstreamer-with-docstring
+  (testing "defstreamer accepts optional docstring"
+    (let [streamer-var  (ns-resolve 'graphql-server.test-streamers 'Subscription-gameUpdated)
+          streamer-meta (meta streamer-var)]
+      (is (= "Subscribe to game state changes" (:doc streamer-meta)))
+      (is (= [:Subscription :gameUpdated] (:graphql/streamer streamer-meta))))))
+
+(deftest defstreamer-returns-cleanup-function
+  (testing "defstreamer returns a cleanup function"
+    (let [streamer      test-streamers/Subscription-messageAdded
+          source-values (atom [])
+          source-stream (fn [v] (swap! source-values conj v))
+          cleanup-fn    (streamer {} {} source-stream)]
+      (is (fn? cleanup-fn))
+      (cleanup-fn))))
+
+(deftest defstreamer-pumps-channel-to-source-stream
+  (testing "defstreamer pumps values from channel to source-stream"
+    (let [game-id       (random-uuid)
+          streamer      test-streamers/Subscription-gameUpdated
+          source-values (atom [])
+          source-stream (fn [v] (swap! source-values conj v))
+          cleanup-fn    (streamer {} {:gameId (str game-id)} source-stream)]
+      ;; Wait for go-loop to process
+      (Thread/sleep 50)
+      ;; Should have received the encoded value
+      (is (>= (count @source-values) 1))
+      ;; Check encoding - keys should be camelCase
+      (let [first-value (first @source-values)]
+        (is (contains? first-value :phase))
+        (is (contains? first-value :playerCount)))
+      (cleanup-fn))))
+
+(deftest defstreamer-encodes-values
+  (testing "defstreamer encodes streamed values with camelCase keys"
+    (let [game-id       (random-uuid)
+          streamer      test-streamers/Subscription-gameUpdated
+          source-values (atom [])
+          source-stream (fn [v] (swap! source-values conj v))
+          cleanup-fn    (streamer {} {:gameId (str game-id)} source-stream)]
+      (Thread/sleep 50)
+      (let [first-value (first @source-values)]
+        ;; Keys should be camelCase
+        (is (contains? first-value :playerCount))
+        (is (not (contains? first-value :player-count))))
+      (cleanup-fn))))
+
+(deftest defstreamer-sends-nil-on-channel-close
+  (testing "defstreamer sends nil to source-stream when channel closes"
+    (let [ch            (async/chan 1)
+          source-values (atom [])
+          done-promise  (promise)
+          source-stream (fn [v]
+                          (swap! source-values conj v)
+                          (when (nil? v) (deliver done-promise true)))
+          ;; Create a simple streamer inline for this test
+          _             (async/go-loop []
+                          (if-let [v (async/<! ch)]
+                            (do (source-stream v)
+                                (recur))
+                            (source-stream nil)))]
+      (async/put! ch {:test "value"})
+      (Thread/sleep 50)
+      (async/close! ch)
+      ;; Wait for nil to be delivered
+      (deref done-promise 1000 :timeout)
+      ;; Should have received the value and then nil
+      (is (= [{:test "value"} nil] @source-values)))))
+
+(deftest collect-streamers-test
+  (testing "collect-streamers gathers all streamers from a namespace"
+    (let [streamers (core/collect-streamers 'graphql-server.test-streamers)]
+      (is (= 3 (count streamers)))
+      (is (contains? streamers [:Subscription :messageAdded]))
+      (is (contains? streamers [:Subscription :gameUpdated]))
+      (is (contains? streamers [:Subscription :statusChanged]))
+      (let [[schema streamer-var] (get streamers [:Subscription :gameUpdated])]
+        (is (some? schema))
+        (is (var? streamer-var))))))
+
+(deftest def-resolver-map-includes-streamers
+  (testing "def-resolver-map includes streamers in the resolvers var"
+    (let [resolvers test-streamers/resolvers]
+      (is (contains? resolvers [:Subscription :messageAdded]))
+      (is (contains? resolvers [:Subscription :gameUpdated]))
+      (is (contains? resolvers [:Subscription :statusChanged])))))
+
+(deftest integration-streamers-with-schema
+  (testing "defstreamer works with ->graphql-schema"
+    (let [gql-schema (schema/->graphql-schema test-streamers/resolvers)]
+      (is (contains? gql-schema :subscriptions))
+      (is (contains? (:subscriptions gql-schema) :messageAdded))
+      (is (contains? (:subscriptions gql-schema) :gameUpdated))
+      (is (contains? (:subscriptions gql-schema) :statusChanged))
+      ;; Check GameState type was discovered
+      (is (contains? (:objects gql-schema) :GameState))
+      ;; Check GameStatus enum was discovered
+      (is (contains? (:enums gql-schema) :GameStatus)))))

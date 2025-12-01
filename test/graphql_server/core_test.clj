@@ -88,6 +88,7 @@
 
 (deftest defresolver-field-resolver-execution
   (testing "field resolver extracts data from parent value"
+    #_{:clj-kondo/ignore [:unresolved-var]}
     (let [result (test-resolvers/User-fullName nil nil {:first-name "John" :last-name "Doe"})]
       (is (= "John Doe" result)))))
 

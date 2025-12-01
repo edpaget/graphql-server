@@ -231,7 +231,7 @@
   [schema _ children _]
   (if-let [enum-gql-name (->graphql-type-name schema)]
     (let [description (-> schema mc/properties :graphql/description)
-          enum-def    (cond-> {:values (set (map name children))}
+          enum-def    (cond-> {:values (set (map #(csk/->SCREAMING_SNAKE_CASE (name %)) children))}
                         description (assoc :description description))]
       [(list 'non-null enum-gql-name)
        {:enums {enum-gql-name enum-def}}])
@@ -300,6 +300,10 @@
         [(list 'non-null graphql-type)
          (collect-types all-types :interfaces graphql-type type-def)])
 
+      ;; Bare map with no fields - treat as Json
+      (empty? field-results)
+      [(list 'non-null 'Json) {}]
+
       :else
       [(list 'non-null field-results) all-types])))
 
@@ -318,6 +322,20 @@
 (defmethod ->graphql-type :merge
   [schema _ _ _]
   (mc/walk (mc/deref schema) ->graphql-type))
+
+(defmethod ->graphql-type :map-of
+  [_ _ _ _]
+  [(list 'non-null 'Json) {}])
+
+(defmethod ->graphql-type :tuple
+  [schema _ _ _]
+  (if-let [scalar-type (-> schema mc/properties :graphql/scalar)]
+    [(list 'non-null (symbol (name scalar-type))) {}]
+    [(list 'non-null 'Json) {}]))
+
+(defmethod ->graphql-type :keyword
+  [_ _ _ _]
+  [(list 'non-null 'String) {}])
 
 (defmethod ->graphql-type :any
   [_ _ _ _]

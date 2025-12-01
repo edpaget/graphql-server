@@ -118,7 +118,7 @@
                {:fields
                 {:status {:type '(non-null :Status)}}}}
               :enums
-              {:Status {:values #{"active" "inactive" "pending"}}}}
+              {:Status {:values #{"ACTIVE" "INACTIVE" "PENDING"}}}}
              result)))))
 
 (deftest query-with-enum-without-type
@@ -496,7 +496,7 @@
                {:fields
                 {:status {:type '(non-null :Status)}}}}
               :enums
-              {:Status {:values #{"active" "inactive" "pending"}
+              {:Status {:values #{"ACTIVE" "INACTIVE" "PENDING"}
                         :description "User account status"}}}
              result)))))
 
@@ -631,7 +631,7 @@
                 {:usersByStatus {:type '(list (non-null String))
                                  :args {:status {:type '(non-null :Status)}}}}}}
               :enums
-              {:Status {:values #{"active" "inactive" "pending"}}}}
+              {:Status {:values #{"ACTIVE" "INACTIVE" "PENDING"}}}}
              result))))
 
   (testing "Query field with optional enum argument"
@@ -646,7 +646,7 @@
                 {:users {:type '(list (non-null String))
                          :args {:status {:type :Status}}}}}}
               :enums
-              {:Status {:values #{"active" "inactive" "pending"}}}}
+              {:Status {:values #{"ACTIVE" "INACTIVE" "PENDING"}}}}
              result))))
 
   (testing "Multiple enums in arguments and return types are all included"
@@ -664,9 +664,9 @@
                                  :args {:status {:type '(non-null :Status)}
                                         :role {:type '(non-null :Role)}}}}}}}
              (select-keys result [:objects])))
-      (is (= {:Status {:values #{"active" "inactive" "pending"}}
-              :Role {:values #{"admin" "user" "guest"}}
-              :Priority {:values #{"low" "medium" "high"}}}
+      (is (= {:Status {:values #{"ACTIVE" "INACTIVE" "PENDING"}}
+              :Role {:values #{"ADMIN" "USER" "GUEST"}}
+              :Priority {:values #{"LOW" "MEDIUM" "HIGH"}}}
              (:enums result))))))
 
 (deftest or-schema-with-graphql-scalar
@@ -744,3 +744,153 @@
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
                             #":or schemas must have :graphql/scalar property"
                             (schema/->graphql-schema resolver-map))))))
+
+;; =============================================================================
+;; JSON scalar tests
+;; =============================================================================
+
+(deftest map-of-returns-json-scalar
+  (testing ":map-of type maps to Json scalar"
+    (let [config-schema [:map {:graphql/type :Config}
+                         [:id :uuid]
+                         [:settings [:map-of :string :string]]]
+          resolver-map  {[:Query :config]
+                         [[:=> [:cat :any :any :any] config-schema]
+                          (fn [_ _ _] {:id (random-uuid) :settings {"key" "value"}})]}
+          result        (schema/->graphql-schema resolver-map)]
+      (is (= {:objects
+              {:Query
+               {:fields
+                {:config {:type '(non-null :Config)}}}
+               :Config
+               {:fields
+                {:id {:type '(non-null Uuid)}
+                 :settings {:type '(non-null Json)}}}}}
+             result)))))
+
+(deftest tuple-returns-json-scalar
+  (testing ":tuple type maps to Json scalar"
+    (let [point-schema [:map {:graphql/type :Point}
+                        [:id :uuid]
+                        [:coordinates [:tuple :int :int]]]
+          resolver-map {[:Query :point]
+                        [[:=> [:cat :any :any :any] point-schema]
+                         (fn [_ _ _] {:id (random-uuid) :coordinates [10 20]})]}
+          result       (schema/->graphql-schema resolver-map)]
+      (is (= {:objects
+              {:Query
+               {:fields
+                {:point {:type '(non-null :Point)}}}
+               :Point
+               {:fields
+                {:id {:type '(non-null Uuid)}
+                 :coordinates {:type '(non-null Json)}}}}}
+             result)))))
+
+(deftest bare-map-returns-json-scalar
+  (testing "Bare :map without fields maps to Json scalar"
+    (let [data-schema  [:map {:graphql/type :Data}
+                        [:id :uuid]
+                        [:metadata :map]]
+          resolver-map {[:Query :data]
+                        [[:=> [:cat :any :any :any] data-schema]
+                         (fn [_ _ _] {:id (random-uuid) :metadata {:foo "bar"}})]}
+          result       (schema/->graphql-schema resolver-map)]
+      (is (= {:objects
+              {:Query
+               {:fields
+                {:data {:type '(non-null :Data)}}}
+               :Data
+               {:fields
+                {:id {:type '(non-null Uuid)}
+                 :metadata {:type '(non-null Json)}}}}}
+             result)))))
+
+(deftest keyword-returns-string-scalar
+  (testing ":keyword type maps to String scalar"
+    (let [item-schema  [:map {:graphql/type :Item}
+                        [:id :uuid]
+                        [:status :keyword]]
+          resolver-map {[:Query :item]
+                        [[:=> [:cat :any :any :any] item-schema]
+                         (fn [_ _ _] {:id (random-uuid) :status :active})]}
+          result       (schema/->graphql-schema resolver-map)]
+      (is (= {:objects
+              {:Query
+               {:fields
+                {:item {:type '(non-null :Item)}}}
+               :Item
+               {:fields
+                {:id {:type '(non-null Uuid)}
+                 :status {:type '(non-null String)}}}}}
+             result)))))
+
+(deftest optional-map-of-returns-nullable-json
+  (testing "Optional :map-of becomes nullable Json"
+    (let [config-schema [:map {:graphql/type :Config}
+                         [:id :uuid]
+                         [:settings {:optional true} [:map-of :string :string]]]
+          resolver-map  {[:Query :config]
+                         [[:=> [:cat :any :any :any] config-schema]
+                          (fn [_ _ _] {:id (random-uuid)})]}
+          result        (schema/->graphql-schema resolver-map)]
+      (is (= {:objects
+              {:Query
+               {:fields
+                {:config {:type '(non-null :Config)}}}
+               :Config
+               {:fields
+                {:id {:type '(non-null Uuid)}
+                 :settings {:type 'Json}}}}}
+             result)))))
+
+(deftest optional-tuple-returns-nullable-json
+  (testing "Optional :tuple becomes nullable Json"
+    (let [point-schema [:map {:graphql/type :Point}
+                        [:id :uuid]
+                        [:coordinates {:optional true} [:tuple :int :int]]]
+          resolver-map {[:Query :point]
+                        [[:=> [:cat :any :any :any] point-schema]
+                         (fn [_ _ _] {:id (random-uuid)})]}
+          result       (schema/->graphql-schema resolver-map)]
+      (is (= {:objects
+              {:Query
+               {:fields
+                {:point {:type '(non-null :Point)}}}
+               :Point
+               {:fields
+                {:id {:type '(non-null Uuid)}
+                 :coordinates {:type 'Json}}}}}
+             result)))))
+
+(deftest tuple-with-graphql-scalar-uses-custom-type
+  (testing ":tuple with :graphql/scalar uses custom scalar type"
+    (let [hex-position [:tuple {:graphql/scalar :HexPosition} :int :int]
+          point-schema [:map {:graphql/type :Point}
+                        [:id :uuid]
+                        [:position hex-position]]
+          resolver-map {[:Query :point]
+                        [[:=> [:cat :any :any :any] point-schema]
+                         (fn [_ _ _] {:id (random-uuid) :position [1 2]})]}
+          result       (schema/->graphql-schema resolver-map)]
+      (is (= {:objects
+              {:Query {:fields {:point {:type '(non-null :Point)}}}
+               :Point {:fields {:id {:type '(non-null Uuid)}
+                                :position {:type '(non-null HexPosition)}}}}}
+             result)))))
+
+(deftest optional-tuple-with-graphql-scalar-is-nullable
+  (testing "Optional :tuple with :graphql/scalar becomes nullable custom type"
+    (let [hex-position [:tuple {:graphql/scalar :HexPosition} :int :int]
+          point-schema [:map {:graphql/type :Point}
+                        [:id :uuid]
+                        [:position {:optional true} hex-position]]
+          resolver-map {[:Query :point]
+                        [[:=> [:cat :any :any :any] point-schema]
+                         (fn [_ _ _] {:id (random-uuid)})]}
+          result       (schema/->graphql-schema resolver-map)]
+      (is (= {:objects
+              {:Query {:fields {:point {:type '(non-null :Point)}}}
+               :Point {:fields {:id {:type '(non-null Uuid)}
+                                :position {:type 'HexPosition}}}}}
+             result)))))

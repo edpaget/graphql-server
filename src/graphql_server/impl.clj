@@ -22,27 +22,31 @@
 (def ^:private enum-transformer
   "Malli transformer for enum values.
 
-  Encodes namespaced keywords to their string name (e.g., `:my-ns/FOO` -> `\"FOO\"`).
-  Decodes strings back to namespaced keywords if they match an option in an `[:enum ...]`
-  schema (e.g., `\"FOO\"` -> `:my-ns/FOO`, assuming `:my-ns/FOO` is a valid schema option)."
+  Encodes namespaced keywords to their string name in SCREAMING_SNAKE_CASE
+  (e.g., `:my-ns/foo-bar` -> `\"FOO_BAR\"`).
+  Decodes SCREAMING_SNAKE_CASE values (strings or keywords) back to the original
+  enum keywords (e.g., `\"FOO_BAR\"` or `:FOO_BAR` -> `:my-ns/foo-bar`).
+
+  Lacinia sends enum arguments as keywords, so we handle both string and keyword input."
   (mt/transformer
    {:decoders
     {:enum
      {:compile
       (fn [schema _options]
-        (let [enum-options   (mc/children schema)
-              enum-namespace (when-let [first-option (first enum-options)]
-                               (when (keyword? first-option)
-                                 (namespace first-option)))]
+        (let [enum-options (mc/children schema)
+              ;; Build lookup table: SCREAMING_SNAKE_CASE name -> original keyword
+              lookup       (into {}
+                                 (map (fn [opt]
+                                        [(csk/->SCREAMING_SNAKE_CASE (name opt)) opt]))
+                                 enum-options)]
           (fn [value]
-            (if enum-namespace
-              (let [kw-value (keyword enum-namespace (name value))]
-                (if (some #(= kw-value %) enum-options)
-                  kw-value
-                  value))
-              value))))}}
+            ;; Handle both string and keyword input (Lacinia sends keywords for enums)
+            (let [lookup-key (if (keyword? value) (name value) value)]
+              (if-let [kw-value (get lookup lookup-key)]
+                kw-value
+                value)))))}}
     :encoders
-    {:enum (fn [value] (when value (name value)))}}))
+    {:enum (fn [value] (when value (csk/->SCREAMING_SNAKE_CASE (name value))))}}))
 
 (def ^:private lacinia-type-tag-transformer
   "Malli transformer that applies Lacinia type tags during encoding.

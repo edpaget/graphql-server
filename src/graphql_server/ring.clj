@@ -34,6 +34,16 @@
              :parse parse-uuid
              :serialize str))
 
+(defn- json-scalar
+  "Adds JSON scalar type handlers to the schema.
+
+  Used for complex nested data like maps with arbitrary keys.
+  Values pass through unchanged as they're already JSON-compatible."
+  [schema]
+  (update-in schema [:scalars :Json] assoc
+             :parse identity
+             :serialize identity))
+
 (defn- tuple-keys->qualified-keywords
   "Converts resolver map keys from tuples to qualified keywords.
 
@@ -44,6 +54,19 @@
              {}
              resolver-map))
 
+(defn- apply-custom-scalars
+  "Applies custom scalar definitions to the schema.
+
+  Takes a schema and a map of scalar keyword names to definitions, where each
+  definition contains `:parse` and `:serialize` functions."
+  [schema scalars]
+  (reduce-kv (fn [s scalar-name {:keys [parse serialize]}]
+               (update-in s [:scalars scalar-name] assoc
+                          :parse parse
+                          :serialize serialize))
+             schema
+             scalars))
+
 (defn build-lacinia-schema
   "Builds a compiled Lacinia schema from a resolver map.
 
@@ -51,13 +74,22 @@
   by [[graphql-server.core/collect-resolvers]] or [[graphql-server.core/def-resolver-map]])
   and returns a compiled Lacinia schema ready for execution.
 
-  The schema includes built-in scalar types for Date and UUID."
-  [resolver-map]
-  (-> (schema/->graphql-schema resolver-map)
-      date-scalar
-      uuid-scalar
-      (lacinia.util/inject-resolvers (tuple-keys->qualified-keywords resolver-map))
-      lacinia.schema/compile))
+  The schema includes built-in scalar types for Date, UUID, and Json.
+
+  Optionally accepts a map of custom scalars where keys are scalar names (keywords)
+  and values are maps with `:parse` and `:serialize` functions:
+
+      {:HexPosition {:parse vec :serialize identity}}"
+  ([resolver-map]
+   (build-lacinia-schema resolver-map {}))
+  ([resolver-map custom-scalars]
+   (-> (schema/->graphql-schema resolver-map)
+       date-scalar
+       uuid-scalar
+       json-scalar
+       (apply-custom-scalars custom-scalars)
+       (lacinia.util/inject-resolvers (tuple-keys->qualified-keywords resolver-map))
+       lacinia.schema/compile)))
 
 (defn- json-response
   "Creates a Ring JSON response with the given data and status code."
@@ -182,6 +214,8 @@
                     context from the Ring request. Defaults to including the full request
                     under `:request` key.
   - `:enable-graphiql?` - Whether to serve GraphiQL on GET requests (default: `true`)
+  - `:scalars` - Optional map of custom scalar definitions. Keys are scalar names (keywords),
+                 values are maps with `:parse` and `:serialize` functions.
 
   Example:
 
@@ -192,13 +226,15 @@
             (graphql-middleware {:resolver-map my-resolvers
                                  :path \"/api/graphql\"
                                  :context-fn (fn [req] {:user (:user req)})
+                                 :scalars {:HexPosition {:parse vec :serialize identity}}
                                  :enable-graphiql? true})
             (wrap-json-body {:keywords? true})))"
-  [handler {:keys [path resolver-map context-fn enable-graphiql?]
+  [handler {:keys [path resolver-map context-fn enable-graphiql? scalars]
             :or {path "/graphql"
                  context-fn (fn [req] {:request req})
-                 enable-graphiql? true}}]
-  (let [compiled-schema (build-lacinia-schema resolver-map)]
+                 enable-graphiql? true
+                 scalars {}}}]
+  (let [compiled-schema (build-lacinia-schema resolver-map scalars)]
     (fn [request]
       (cond
         ;; POST requests - execute GraphQL

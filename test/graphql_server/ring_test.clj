@@ -6,8 +6,8 @@
    [graphql-server.core :refer [defresolver defstreamer def-resolver-map]]
    [graphql-server.ring :as ring]
    [graphql-server.subscriptions :as subs]
-   [java-time.api :as t])
-  (:import [java.io InputStream]))
+   [java-time.api :as t]
+   [ring.core.protocols :as protocols]))
 
 (defresolver :Query :hello
   [:=> [:cat :any :any :any] :string]
@@ -250,7 +250,7 @@
           response (handler request)]
       (is (= 200 (:status response)))
       (is (= "text/event-stream" (get-in response [:headers "Content-Type"])))
-      (is (instance? InputStream (:body response))))))
+      (is (satisfies? protocols/StreamableResponseBody (:body response))))))
 
 (deftest subscription-and-graphiql-coexist-test
   (testing "subscriptions and GraphiQL work together with default paths"

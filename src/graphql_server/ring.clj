@@ -228,6 +228,15 @@
                   :type (or (some-> e ex-data :type name) "internal-error")}]}
        500))))
 
+(defn- get-subscription-field-name
+  "Extracts the subscription field name (or alias) from a parsed query.
+
+  Returns the alias if present, otherwise the field name as a camelCase string."
+  [parsed-query]
+  (let [selection (-> parsed-query :selections first)]
+    (or (:alias selection)
+        (csk/->camelCase (name (:field-name selection))))))
+
 (defn- execute-subscription
   "Executes a GraphQL subscription query via SSE.
 
@@ -239,13 +248,14 @@
     (let [parsed-query   (-> compiled-schema
                              (lacinia.parser/parse-query query)
                              (lacinia.parser/prepare-with-query-variables variables))
+          field-name     (get-subscription-field-name parsed-query)
           result-channel (async/chan 10)
           source-stream  (fn [value]
                            (if (nil? value)
                              (async/close! result-channel)
                              (async/put! result-channel
-                                         {:type :data
-                                          :data {:data value}}))
+                                         {:type :message
+                                          :data {field-name value}}))
                            nil)
           _cleanup-fn    (lacinia.executor/invoke-streamer
                           (assoc context

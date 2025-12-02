@@ -326,3 +326,77 @@
     (let [schema (ring/build-lacinia-schema resolvers)]
       (is (some? schema))
       (is (map? schema)))))
+
+;; Union type tagging tests
+
+(def ^:private BallPossessed
+  [:map {:graphql/type :BallPossessed}
+   [:status [:= :possessed]]
+   [:holder-id :string]])
+
+(def ^:private BallLoose
+  [:map {:graphql/type :BallLoose}
+   [:status [:= :loose]]
+   [:position [:vector :int]]])
+
+(def ^:private Ball
+  [:multi {:dispatch :status :graphql/type :Ball}
+   [:possessed BallPossessed]
+   [:loose BallLoose]])
+
+(def ^:private GameState
+  [:map {:graphql/type :GameState}
+   [:turn-number :int]
+   [:ball Ball]])
+
+(defresolver :Query :gameState
+  "Returns a game state with a possessed ball"
+  [:=> [:cat :any :any :any] GameState]
+  [_ctx _args _value]
+  {:turn-number 1
+   :ball {:status :possessed
+          :holder-id "player-1"}})
+
+(defresolver :Query :looseBall
+  "Returns a game state with a loose ball"
+  [:=> [:cat :any :any :any] GameState]
+  [_ctx _args _value]
+  {:turn-number 2
+   :ball {:status :loose
+          :position [3 7]}})
+
+(def ^:private union-resolvers
+  (merge resolvers
+         {[:Query :gameState] [[:=> [:cat :any :any :any] GameState]
+                               #'Query-gameState]
+          [:Query :looseBall] [[:=> [:cat :any :any :any] GameState]
+                               #'Query-looseBall]}))
+
+(deftest graphql-union-type-tagging-test
+  (testing "GraphQL query returns correct union type for BallPossessed"
+    (let [handler  (ring/graphql-middleware
+                    passthrough-handler
+                    {:resolver-map union-resolvers})
+          query    "{ gameState { turnNumber ball { __typename ... on BallPossessed { holderId } } } }"
+          request  (make-graphql-request query)
+          response (handler request)
+          body     (json/parse-string (:body response) true)]
+      (is (= 200 (:status response)))
+      (is (nil? (:errors body)) (str "Unexpected errors: " (:errors body)))
+      (is (= 1 (get-in body [:data :gameState :turnNumber])))
+      (is (= "BallPossessed" (get-in body [:data :gameState :ball :__typename])))
+      (is (= "player-1" (get-in body [:data :gameState :ball :holderId])))))
+
+  (testing "GraphQL query returns correct union type for BallLoose"
+    (let [handler  (ring/graphql-middleware
+                    passthrough-handler
+                    {:resolver-map union-resolvers})
+          query    "{ looseBall { turnNumber ball { __typename ... on BallLoose { position } } } }"
+          request  (make-graphql-request query)
+          response (handler request)
+          body     (json/parse-string (:body response) true)]
+      (is (= 200 (:status response)))
+      (is (nil? (:errors body)) (str "Unexpected errors: " (:errors body)))
+      (is (= 2 (get-in body [:data :looseBall :turnNumber])))
+      (is (= "BallLoose" (get-in body [:data :looseBall :ball :__typename])))
+      (is (= [3 7] (get-in body [:data :looseBall :ball :position]))))))

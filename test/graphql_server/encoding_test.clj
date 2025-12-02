@@ -197,3 +197,118 @@
           wrapped    (impl/coerce-args arg-schema resolver)
           result     (wrapped nil {:userName 123} nil)]
       (is (contains? result :errors)))))
+
+(deftest nested-maybe-with-multi-tagging-test
+  (testing "tags nested :multi inside :maybe field"
+    (let [Container [:map {:graphql/type :Container}
+                     [:item [:maybe Person]]]
+          resolver  (fn [_ctx _args _value]
+                      {:item {:type :user
+                              :user-id #uuid "550e8400-e29b-41d4-a716-446655440000"
+                              :user-name "Alice"
+                              :status :test.models.status/ACTIVE}})
+          wrapped   (impl/wrap-resolver-with-encoding resolver Container)
+          result    (wrapped nil nil nil)]
+      (is (= :Container (:com.walmartlabs.lacinia.schema/type-name (meta result))))
+      (is (= :User (:com.walmartlabs.lacinia.schema/type-name (meta (:item result)))))))
+
+  (testing "tags deeply nested :multi inside :maybe -> :map -> :multi"
+    (let [Inner     [:map {:graphql/type :Inner}
+                     [:person Person]]
+          Outer     [:map {:graphql/type :Outer}
+                     [:inner [:maybe Inner]]]
+          resolver  (fn [_ctx _args _value]
+                      {:inner {:person {:type :user
+                                        :user-id #uuid "550e8400-e29b-41d4-a716-446655440000"
+                                        :user-name "Alice"
+                                        :status :test.models.status/ACTIVE}}})
+          wrapped   (impl/wrap-resolver-with-encoding resolver Outer)
+          result    (wrapped nil nil nil)]
+      (is (= :Outer (:com.walmartlabs.lacinia.schema/type-name (meta result))))
+      (is (= :Inner (:com.walmartlabs.lacinia.schema/type-name (meta (:inner result)))))
+      (is (= :User (:com.walmartlabs.lacinia.schema/type-name (meta (:person (:inner result))))))))
+
+  (testing "tags with :maybe at top level AND nested field containing :multi"
+    (let [Inner     [:map {:graphql/type :Inner}
+                     [:person Person]]
+          Outer     [:map {:graphql/type :Outer}
+                     [:inner [:maybe Inner]]]
+          resolver  (fn [_ctx _args _value]
+                      {:inner {:person {:type :user
+                                        :user-id #uuid "550e8400-e29b-41d4-a716-446655440000"
+                                        :user-name "Alice"
+                                        :status :test.models.status/ACTIVE}}})
+          wrapped   (impl/wrap-resolver-with-encoding resolver [:maybe Outer])
+          result    (wrapped nil nil nil)]
+      (is (= :Outer (:com.walmartlabs.lacinia.schema/type-name (meta result))))
+      (is (= :Inner (:com.walmartlabs.lacinia.schema/type-name (meta (:inner result)))))
+      (is (= :User (:com.walmartlabs.lacinia.schema/type-name (meta (:person (:inner result)))))))))
+
+(deftest ball-like-multi-tagging-test
+  (testing "tags :multi with keyword dispatch (like Ball schema)"
+    (let [BallPossessed [:map {:graphql/type :BallPossessed}
+                         [:status [:= :possessed]]
+                         [:holder-id :string]]
+          BallLoose     [:map {:graphql/type :BallLoose}
+                         [:status [:= :loose]]
+                         [:position [:vector :int]]]
+          Ball          [:multi {:dispatch :status :graphql/type :Ball}
+                         [:possessed BallPossessed]
+                         [:loose BallLoose]]
+          GameState     [:map {:graphql/type :GameState}
+                         [:ball Ball]]
+          GameResponse  [:map {:graphql/type :Game}
+                         [:game-state [:maybe GameState]]]
+          resolver      (fn [_ctx _args _value]
+                          {:game-state {:ball {:status :possessed
+                                               :holder-id "player-1"}}})
+          wrapped       (impl/wrap-resolver-with-encoding resolver [:maybe GameResponse])
+          result        (wrapped nil nil nil)]
+      (is (= :Game (:com.walmartlabs.lacinia.schema/type-name (meta result))))
+      (is (= :GameState (:com.walmartlabs.lacinia.schema/type-name (meta (:gameState result)))))
+      (is (= :BallPossessed (:com.walmartlabs.lacinia.schema/type-name (meta (:ball (:gameState result))))))))
+
+  (testing "tags loose ball variant"
+    (let [BallPossessed [:map {:graphql/type :BallPossessed}
+                         [:status [:= :possessed]]
+                         [:holder-id :string]]
+          BallLoose     [:map {:graphql/type :BallLoose}
+                         [:status [:= :loose]]
+                         [:position [:vector :int]]]
+          Ball          [:multi {:dispatch :status :graphql/type :Ball}
+                         [:possessed BallPossessed]
+                         [:loose BallLoose]]
+          GameState     [:map {:graphql/type :GameState}
+                         [:ball Ball]]
+          GameResponse  [:map {:graphql/type :Game}
+                         [:game-state [:maybe GameState]]]
+          resolver      (fn [_ctx _args _value]
+                          {:game-state {:ball {:status :loose
+                                               :position [1 2]}}})
+          wrapped       (impl/wrap-resolver-with-encoding resolver [:maybe GameResponse])
+          result        (wrapped nil nil nil)]
+      (is (= :BallLoose (:com.walmartlabs.lacinia.schema/type-name (meta (:ball (:gameState result))))))))
+
+  (testing "fails to tag when dispatch value is string instead of keyword"
+    (let [BallPossessed [:map {:graphql/type :BallPossessed}
+                         [:status [:= :possessed]]
+                         [:holder-id :string]]
+          BallLoose     [:map {:graphql/type :BallLoose}
+                         [:status [:= :loose]]
+                         [:position [:vector :int]]]
+          Ball          [:multi {:dispatch :status :graphql/type :Ball}
+                         [:possessed BallPossessed]
+                         [:loose BallLoose]]
+          GameState     [:map {:graphql/type :GameState}
+                         [:ball Ball]]
+          GameResponse  [:map {:graphql/type :Game}
+                         [:game-state [:maybe GameState]]]
+          resolver      (fn [_ctx _args _value]
+                          ;; Simulating JSON parse where keywords become strings
+                          {:game-state {:ball {:status "possessed"
+                                               :holder-id "player-1"}}})
+          wrapped       (impl/wrap-resolver-with-encoding resolver [:maybe GameResponse])
+          result        (wrapped nil nil nil)]
+      ;; This will likely fail - dispatch returns "possessed" but tag-map has :possessed
+      (is (nil? (:com.walmartlabs.lacinia.schema/type-name (meta (:ball (:gameState result)))))
+          "String dispatch value doesn't match keyword dispatch keys"))))

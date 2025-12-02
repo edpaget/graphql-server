@@ -107,7 +107,11 @@
   ([resolver-map]
    (build-lacinia-schema resolver-map {}))
   ([resolver-map custom-scalars]
-   (let [resolvers (tuple-keys->qualified-keywords resolver-map #{:Query :Mutation})
+   (let [;; Include Query, Mutation, and field resolvers (non-Subscription)
+         resolvers (tuple-keys->qualified-keywords
+                    resolver-map
+                    (into #{} (comp (map first) (remove #{:Subscription}))
+                          (keys resolver-map)))
          streamers (tuple-keys->qualified-keywords resolver-map #{:Subscription} "subscriptions")]
      (-> (schema/->graphql-schema resolver-map)
          date-scalar

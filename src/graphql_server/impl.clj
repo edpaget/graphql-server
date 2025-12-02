@@ -54,7 +54,9 @@
   For `:multi` schemas (union types), uses the dispatch function to determine the
   concrete type and tags the encoded value with `schema/tag-with-type`.
   For `:map` schemas with `:graphql/type` or `:graphql/interface` properties,
-  tags with that type name."
+  tags with that type name.
+  For `:tuple` schemas with `:graphql/scalar`, converts vectors to Java arrays
+  so Lacinia doesn't interpret them as GraphQL list values."
   (mt/transformer
    {:encoders
     {:multi
@@ -86,7 +88,16 @@
               (fn [value]
                 (when value
                   (schema/tag-with-type value tag))))
-            identity)))}}}))
+            identity)))}
+     :tuple
+     {:compile
+      (fn [schema _options]
+        (if (-> schema mc/properties :graphql/scalar)
+          ;; Convert to Java int array - not sequential? so Lacinia won't treat as list
+          (fn [value]
+            (when value
+              (into-array Integer/TYPE (map int value))))
+          identity))}}}))
 
 (def ^:private decode-key-transformer
   "Malli transformer for decoding map keys.

@@ -11,6 +11,7 @@
   (:require
    [camel-snake-kebab.core :as csk]
    [cheshire.core :as json]
+   [cheshire.generate :as json-gen]
    [clojure.core.async :as async]
    [clojure.string :as str]
    [clojure.tools.logging :as log]
@@ -23,7 +24,20 @@
    [graphql-server.schema :as schema]
    [graphql-server.sse :as sse]
    [java-time.api :as t]
-   [ring.util.response :as response]))
+   [ring.util.response :as response])
+  (:import
+   [com.fasterxml.jackson.core JsonGenerator]))
+
+;; Add custom JSON encoder for Java int arrays (used by HexPosition tuples)
+;; These are created by the encoding transformer to prevent Lacinia from treating
+;; vectors as GraphQL list values, but they need to serialize to JSON as arrays.
+(json-gen/add-encoder
+ (Class/forName "[I")
+ (fn [^ints arr ^JsonGenerator gen]
+   (.writeStartArray gen)
+   (doseq [i arr]
+     (.writeNumber gen (int i)))
+   (.writeEndArray gen)))
 
 (defn- date-scalar
   "Adds Date scalar type handlers to the schema.

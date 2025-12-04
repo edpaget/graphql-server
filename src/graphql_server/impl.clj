@@ -64,11 +64,14 @@
       (fn [schema _options]
         (let [dispatch-fn (-> schema mc/properties :dispatch)
               ;; Build map from dispatch value to GraphQL type name
+              ;; Multi children can be [dispatch-val schema] or [dispatch-val props schema]
               tag-map     (->> (mc/children schema)
-                               (map (fn [[dispatch-val _props child-schema]]
-                                      (let [child     (mc/deref-all child-schema)
-                                            type-name (or (get (mc/properties child) :graphql/type)
-                                                          (get (mc/properties child) :graphql/interface))]
+                               (map (fn [child-entry]
+                                      (let [dispatch-val (first child-entry)
+                                            child-schema (last child-entry)
+                                            child        (mc/deref-all child-schema)
+                                            type-name    (or (get (mc/properties child) :graphql/type)
+                                                             (get (mc/properties child) :graphql/interface))]
                                         [dispatch-val (when type-name
                                                         (csk/->PascalCaseKeyword type-name))])))
                                (into {}))]

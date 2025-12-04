@@ -107,14 +107,14 @@
   Skips comment-only blocks (keepalives) and returns the first real event."
   [^BufferedReader reader]
   (loop [event nil
-         data nil]
+         data  nil]
     (let [line (.readLine reader)]
       (cond
         (nil? line) nil
         ;; Blank line ends an event block - but only return if we have content
         (str/blank? line) (if (or event data)
-                           {:event event :data data}
-                           (recur nil nil))
+                            {:event event :data data}
+                            (recur nil nil))
         (str/starts-with? line "event: ") (recur (subs line 7) data)
         (str/starts-with? line "data: ") (recur event (subs line 6))
         ;; Comments are skipped
@@ -123,12 +123,12 @@
 
 (deftest http-sse-headers-received-immediately-test
   (testing "HTTP request receives SSE headers before any events"
-    (let [port         (find-free-port)
-          event-ch     (async/chan)
-          handler      (fn [_req] (sse/sse-response event-ch))
-          server       (jetty/run-jetty handler {:port port :join? false})
-          response     (hato/get (str "http://localhost:" port "/sse")
-                                 {:as :stream :timeout 5000})]
+    (let [port     (find-free-port)
+          event-ch (async/chan)
+          handler  (fn [_req] (sse/sse-response event-ch))
+          server   (jetty/run-jetty handler {:port port :join? false})
+          response (hato/get (str "http://localhost:" port "/sse")
+                             {:as :stream :timeout 5000})]
       (try
         (is (= 200 (:status response)))
         (is (= "text/event-stream" (get-in response [:headers "content-type"])))
@@ -138,13 +138,13 @@
 
 (deftest http-sse-streams-initial-event-test
   (testing "HTTP request receives SSE event after headers"
-    (let [port         (find-free-port)
-          event-ch     (async/chan)
-          handler      (fn [_req] (sse/sse-response event-ch))
-          server       (jetty/run-jetty handler {:port port :join? false})
-          response     (hato/get (str "http://localhost:" port "/sse")
-                                 {:as :stream :timeout 5000})
-          reader       (BufferedReader. (InputStreamReader. (:body response) "UTF-8"))]
+    (let [port     (find-free-port)
+          event-ch (async/chan)
+          handler  (fn [_req] (sse/sse-response event-ch))
+          server   (jetty/run-jetty handler {:port port :join? false})
+          response (hato/get (str "http://localhost:" port "/sse")
+                             {:as :stream :timeout 5000})
+          reader   (BufferedReader. (InputStreamReader. (:body response) "UTF-8"))]
       (try
         (is (= 200 (:status response)))
         (async/>!! event-ch {:type :connected :data {:session-id "abc123"}})
@@ -158,13 +158,13 @@
 
 (deftest http-sse-streams-multiple-events-test
   (testing "HTTP request receives multiple SSE events in sequence"
-    (let [port         (find-free-port)
-          event-ch     (async/chan)
-          handler      (fn [_req] (sse/sse-response event-ch))
-          server       (jetty/run-jetty handler {:port port :join? false})
-          response     (hato/get (str "http://localhost:" port "/sse")
-                                 {:as :stream :timeout 5000})
-          reader       (BufferedReader. (InputStreamReader. (:body response) "UTF-8"))]
+    (let [port     (find-free-port)
+          event-ch (async/chan)
+          handler  (fn [_req] (sse/sse-response event-ch))
+          server   (jetty/run-jetty handler {:port port :join? false})
+          response (hato/get (str "http://localhost:" port "/sse")
+                             {:as :stream :timeout 5000})
+          reader   (BufferedReader. (InputStreamReader. (:body response) "UTF-8"))]
       (try
         (async/>!! event-ch {:type :event-1 :data {:n 1}})
         (async/>!! event-ch {:type :event-2 :data {:n 2}})

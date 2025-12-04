@@ -213,33 +213,33 @@
       (is (= :User (:com.walmartlabs.lacinia.schema/type-name (meta (:item result)))))))
 
   (testing "tags deeply nested :multi inside :maybe -> :map -> :multi"
-    (let [Inner     [:map {:graphql/type :Inner}
-                     [:person Person]]
-          Outer     [:map {:graphql/type :Outer}
-                     [:inner [:maybe Inner]]]
-          resolver  (fn [_ctx _args _value]
-                      {:inner {:person {:type :user
-                                        :user-id #uuid "550e8400-e29b-41d4-a716-446655440000"
-                                        :user-name "Alice"
-                                        :status :test.models.status/ACTIVE}}})
-          wrapped   (impl/wrap-resolver-with-encoding resolver Outer)
-          result    (wrapped nil nil nil)]
+    (let [Inner    [:map {:graphql/type :Inner}
+                    [:person Person]]
+          Outer    [:map {:graphql/type :Outer}
+                    [:inner [:maybe Inner]]]
+          resolver (fn [_ctx _args _value]
+                     {:inner {:person {:type :user
+                                       :user-id #uuid "550e8400-e29b-41d4-a716-446655440000"
+                                       :user-name "Alice"
+                                       :status :test.models.status/ACTIVE}}})
+          wrapped  (impl/wrap-resolver-with-encoding resolver Outer)
+          result   (wrapped nil nil nil)]
       (is (= :Outer (:com.walmartlabs.lacinia.schema/type-name (meta result))))
       (is (= :Inner (:com.walmartlabs.lacinia.schema/type-name (meta (:inner result)))))
       (is (= :User (:com.walmartlabs.lacinia.schema/type-name (meta (:person (:inner result))))))))
 
   (testing "tags with :maybe at top level AND nested field containing :multi"
-    (let [Inner     [:map {:graphql/type :Inner}
-                     [:person Person]]
-          Outer     [:map {:graphql/type :Outer}
-                     [:inner [:maybe Inner]]]
-          resolver  (fn [_ctx _args _value]
-                      {:inner {:person {:type :user
-                                        :user-id #uuid "550e8400-e29b-41d4-a716-446655440000"
-                                        :user-name "Alice"
-                                        :status :test.models.status/ACTIVE}}})
-          wrapped   (impl/wrap-resolver-with-encoding resolver [:maybe Outer])
-          result    (wrapped nil nil nil)]
+    (let [Inner    [:map {:graphql/type :Inner}
+                    [:person Person]]
+          Outer    [:map {:graphql/type :Outer}
+                    [:inner [:maybe Inner]]]
+          resolver (fn [_ctx _args _value]
+                     {:inner {:person {:type :user
+                                       :user-id #uuid "550e8400-e29b-41d4-a716-446655440000"
+                                       :user-name "Alice"
+                                       :status :test.models.status/ACTIVE}}})
+          wrapped  (impl/wrap-resolver-with-encoding resolver [:maybe Outer])
+          result   (wrapped nil nil nil)]
       (is (= :Outer (:com.walmartlabs.lacinia.schema/type-name (meta result))))
       (is (= :Inner (:com.walmartlabs.lacinia.schema/type-name (meta (:inner result)))))
       (is (= :User (:com.walmartlabs.lacinia.schema/type-name (meta (:person (:inner result)))))))))
@@ -311,4 +311,34 @@
           result        (wrapped nil nil nil)]
       ;; This will likely fail - dispatch returns "possessed" but tag-map has :possessed
       (is (nil? (:com.walmartlabs.lacinia.schema/type-name (meta (:ball (:gameState result)))))
-          "String dispatch value doesn't match keyword dispatch keys"))))
+          "String dispatch value doesn't match keyword dispatch keys")))
+
+  (testing "tags :multi with uppercase keyword dispatch (like actual Ball schema)"
+    (let [BallPossessed [:map {:graphql/type :BallPossessed}
+                         [:status [:= :POSSESSED]]
+                         [:holder-id :string]]
+          BallLoose     [:map {:graphql/type :BallLoose}
+                         [:status [:= :LOOSE]]
+                         [:position [:vector :int]]]
+          BallInAir     [:map {:graphql/type :BallInAir}
+                         [:status [:= :IN_AIR]]
+                         [:origin [:vector :int]]
+                         [:target [:vector :int]]
+                         [:action-type [:enum :SHOT :PASS]]]
+          Ball          [:multi {:dispatch :status :graphql/type :Ball}
+                         [:POSSESSED BallPossessed]
+                         [:LOOSE BallLoose]
+                         [:IN_AIR BallInAir]]
+          GameState     [:map {:graphql/type :GameState}
+                         [:ball Ball]]
+          GameResponse  [:map {:graphql/type :Game}
+                         [:game-state [:maybe GameState]]]
+          resolver      (fn [_ctx _args _value]
+                          {:game-state {:ball {:status :POSSESSED
+                                               :holder-id "player-1"}}})
+          wrapped       (impl/wrap-resolver-with-encoding resolver [:maybe GameResponse])
+          result        (wrapped nil nil nil)]
+      (is (= :Game (:com.walmartlabs.lacinia.schema/type-name (meta result))))
+      (is (= :GameState (:com.walmartlabs.lacinia.schema/type-name (meta (:gameState result)))))
+      (is (= :BallPossessed (:com.walmartlabs.lacinia.schema/type-name (meta (:ball (:gameState result)))))
+          "Uppercase dispatch value :POSSESSED should tag as BallPossessed"))))

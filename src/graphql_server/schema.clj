@@ -167,12 +167,12 @@
   in the schema options to override it."
   [[field-name opts [field-type field-types]]]
   (when-not (or (:graphql/hidden opts) (nil? field-type))
-    (let [final-type     (if (:optional opts)
-                           (strip-non-null field-type)
-                           field-type)
-          field-def      (cond-> {:type final-type}
-                           (:graphql/description opts) (assoc :description (:graphql/description opts)))
-          graphql-name   (or (:graphql/name opts) (csk/->camelCaseKeyword field-name))]
+    (let [final-type   (if (:optional opts)
+                         (strip-non-null field-type)
+                         field-type)
+          field-def    (cond-> {:type final-type}
+                         (:graphql/description opts) (assoc :description (:graphql/description opts)))
+          graphql-name (or (:graphql/name opts) (csk/->camelCaseKeyword field-name))]
       [[graphql-name field-def]
        field-types])))
 

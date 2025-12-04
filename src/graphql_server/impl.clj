@@ -106,12 +106,34 @@
   (mt/key-transformer
    {:decode csk/->kebab-case-keyword}))
 
+(defn- uppercase-keyword?
+  "Returns true if keyword is all uppercase (e.g., :HOME, :AWAY).
+
+  Used to preserve keys that should not be converted to camelCase when they
+  have explicit `:graphql/name` overrides in the schema."
+  [k]
+  (and (keyword? k)
+       (let [n (name k)]
+         (and (not (clojure.string/blank? n))
+              (= n (clojure.string/upper-case n))))))
+
+(defn- encode-key
+  "Encodes a map key for GraphQL output.
+
+  Preserves uppercase keywords (e.g., :HOME, :AWAY) that have explicit
+  `:graphql/name` overrides. Converts other kebab-case keywords to camelCase."
+  [k]
+  (if (uppercase-keyword? k)
+    k
+    (csk/->camelCaseKeyword k)))
+
 (def ^:private encode-key-transformer
   "Malli transformer for encoding map keys.
 
-  Encodes keys from kebab-case keywords to camelCase keywords."
+  Encodes keys from kebab-case keywords to camelCase keywords, except for
+  uppercase keywords like :HOME and :AWAY which are preserved as-is."
   (mt/key-transformer
-   {:encode csk/->camelCaseKeyword}))
+   {:encode encode-key}))
 
 (def ^:private decoding-transformer
   "Composite transformer for decoding GraphQL inputs to application data.

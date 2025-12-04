@@ -29,6 +29,7 @@
   - `{:graphql/implements [Schema1 Schema2]}` - Object implements interfaces (must reference schemas, not keywords)
   - `{:graphql/scalar :ScalarName}` - Maps a schema to a GraphQL scalar type (e.g., `:Date`, `:Uuid`)
   - `{:graphql/hidden true}` - Excludes a field from the GraphQL schema
+  - `{:graphql/name :FieldName}` - Overrides the default camelCase field name in GraphQL (e.g., use `:HOME` instead of `:home`)
 
   ## Examples
 
@@ -160,15 +161,19 @@
   Returns `[[field-name field-def] field-types]` or nil if hidden.
 
   Optional keys (`:optional true` in Malli) become nullable types in GraphQL by stripping
-  the `non-null` wrapper from the field type."
+  the `non-null` wrapper from the field type.
+
+  The field name is converted to camelCase by default, unless `:graphql/name` is specified
+  in the schema options to override it."
   [[field-name opts [field-type field-types]]]
   (when-not (or (:graphql/hidden opts) (nil? field-type))
-    (let [final-type (if (:optional opts)
-                       (strip-non-null field-type)
-                       field-type)
-          field-def  (cond-> {:type final-type}
-                       (:graphql/description opts) (assoc :description (:graphql/description opts)))]
-      [[(csk/->camelCaseKeyword field-name) field-def]
+    (let [final-type     (if (:optional opts)
+                           (strip-non-null field-type)
+                           field-type)
+          field-def      (cond-> {:type final-type}
+                           (:graphql/description opts) (assoc :description (:graphql/description opts)))
+          graphql-name   (or (:graphql/name opts) (csk/->camelCaseKeyword field-name))]
+      [[graphql-name field-def]
        field-types])))
 
 (defn- collect-types

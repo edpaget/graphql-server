@@ -110,10 +110,10 @@
    {:decode csk/->kebab-case-keyword}))
 
 (defn- uppercase-keyword?
-  "Returns true if keyword is all uppercase (e.g., :HOME, :AWAY).
+  "Returns true if keyword name is all uppercase (e.g., :HOME, :team/HOME).
 
-  Used to preserve keys that should not be converted to camelCase when they
-  have explicit `:graphql/name` overrides in the schema."
+  Used to identify keys that should be transformed to plain uppercase for
+  GraphQL output (matching :graphql/name overrides in schemas)."
   [k]
   (and (keyword? k)
        (let [n (name k)]
@@ -123,11 +123,16 @@
 (defn- encode-key
   "Encodes a map key for GraphQL output.
 
-  Preserves uppercase keywords (e.g., :HOME, :AWAY) that have explicit
-  `:graphql/name` overrides. Converts other kebab-case keywords to camelCase."
+  Transforms:
+  - Namespaced uppercase keywords (e.g., :team/HOME) -> plain uppercase (:HOME)
+  - Non-namespaced uppercase keywords (e.g., :HOME) -> preserved as-is
+  - Kebab-case keywords -> camelCase
+
+  This handles Malli schemas that use namespaced keys with :graphql/name
+  annotations, e.g., [:team/HOME {:graphql/name :HOME} ...]"
   [k]
   (if (uppercase-keyword? k)
-    k
+    (keyword (name k))
     (csk/->camelCaseKeyword k)))
 
 (def ^:private encode-key-transformer

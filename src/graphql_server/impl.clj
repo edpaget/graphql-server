@@ -2,6 +2,7 @@
   "Internal implementation details for GraphQL resolver handling."
   (:require
    [camel-snake-kebab.core :as csk]
+   [clojure.string :as str]
    [clojure.tools.logging :as log]
    [com.walmartlabs.lacinia.schema :as schema]
    [malli.core :as mc]
@@ -117,8 +118,8 @@
   [k]
   (and (keyword? k)
        (let [n (name k)]
-         (and (not (clojure.string/blank? n))
-              (= n (clojure.string/upper-case n))))))
+         (and (not (str/blank? n))
+              (= n (str/upper-case n))))))
 
 (defn- encode-key
   "Encodes a map key for GraphQL output.

@@ -264,7 +264,7 @@
 (defmethod ->graphql-type :vector
   [_ _ children _]
   (let [[[child-type child-types]] children]
-    [(list 'list child-type) child-types]))
+    [(list 'non-null (list 'list child-type)) child-types]))
 
 (defmethod ->graphql-type :map
   [schema _ field-entries _]

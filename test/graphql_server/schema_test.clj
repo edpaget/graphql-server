@@ -104,7 +104,7 @@
       (is (= {:objects
               {:Query
                {:fields
-                {:tags {:type '(list (non-null String))}}}}}
+                {:tags {:type '(non-null (list (non-null String)))}}}}}
              result)))))
 
 (deftest query-with-enum-return
@@ -282,7 +282,7 @@
       (is (= {:objects
               {:Query
                {:fields
-                {:search {:type '(list (non-null String))
+                {:search {:type '(non-null (list (non-null String)))
                           :args {:query {:type '(non-null String)}
                                  :limit {:type '(non-null Int)}}}}}}}
              result)))))
@@ -296,7 +296,7 @@
       (is (= {:objects
               {:Query
                {:fields
-                {:users {:type '(list (non-null String))
+                {:users {:type '(non-null (list (non-null String)))
                          :args {:limit {:type 'Int}}}}}}}
              result)))))
 
@@ -628,7 +628,7 @@
       (is (= {:objects
               {:Query
                {:fields
-                {:usersByStatus {:type '(list (non-null String))
+                {:usersByStatus {:type '(non-null (list (non-null String)))
                                  :args {:status {:type '(non-null :Status)}}}}}}
               :enums
               {:Status {:values #{"ACTIVE" "INACTIVE" "PENDING"}}}}
@@ -643,7 +643,7 @@
       (is (= {:objects
               {:Query
                {:fields
-                {:users {:type '(list (non-null String))
+                {:users {:type '(non-null (list (non-null String)))
                          :args {:status {:type :Status}}}}}}
               :enums
               {:Status {:values #{"ACTIVE" "INACTIVE" "PENDING"}}}}

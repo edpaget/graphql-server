@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Automated `-SNAPSHOT` publish to GitHub Packages on every CI-green push to `main`.
 - Manually-dispatched release workflow with patch/minor/major bump picker that
   updates `VERSION`, `CHANGELOG.md`, `README.md`, tags, and deploys to Clojars.
+- "Releasing" section in `README.md` documenting the release workflow
+  prerequisites (Clojars deploy token, release GitHub App, branch
+  protection) and the dispatch-and-pick-bump-level flow.
 
 ## [0.1.0] - 2026-04-27
 

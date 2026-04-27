@@ -1,4 +1,4 @@
-{:paths ["src"]
+{:paths ["src" "resources"]
  :deps
  {org.clojure/clojure           {:mvn/version "1.12.4"}
   org.clojure/core.async        {:mvn/version "1.7.701"}
@@ -31,6 +31,10 @@
   :lint
   {:extra-deps {clj-kondo/clj-kondo {:mvn/version "2025.07.28"}}
    :main-opts  ["-m" "clj-kondo.main"]}
+  :format
+  {:extra-deps {dev.weavejester/cljfmt {:mvn/version "0.15.3"}}
+   :ns-default cljfmt.tool
+   :exec-fn    cljfmt.tool/fix}
   :outdated
   {:extra-deps {com.github.liquidz/antq {:mvn/version "2.11.1276"}}
    :main-opts  ["-m" "antq.core"]}}}

@@ -1,0 +1,40 @@
+(ns build
+  (:require [clojure.string :as str]
+            [clojure.tools.build.api :as b]))
+
+(def lib 'net.carcdr/graphql-server)
+(def version (str/trim (slurp "VERSION")))
+(def class-dir "target/classes")
+(def jar-file (format "target/%s-%s.jar" (name lib) version))
+(def basis (delay (b/create-basis {:project "deps.edn"})))
+
+(defn clean [_]
+  (b/delete {:path "target"}))
+
+(defn jar [_]
+  (clean nil)
+  (b/write-pom {:class-dir class-dir
+                :lib       lib
+                :version   version
+                :basis     @basis
+                :src-dirs  ["src"]
+                :scm       {:url                 "https://github.com/edpaget/graphql-server"
+                            :connection          "scm:git:git://github.com/edpaget/graphql-server.git"
+                            :developerConnection "scm:git:ssh://git@github.com/edpaget/graphql-server.git"
+                            :tag                 version}
+                :pom-data  [[:licenses
+                             [:license
+                              [:name "Apache-2.0"]
+                              [:url "https://www.apache.org/licenses/LICENSE-2.0"]]]]})
+  (b/copy-dir {:src-dirs   ["src" "resources"]
+               :target-dir class-dir})
+  (b/jar {:class-dir class-dir
+          :jar-file  jar-file}))
+
+(defn install [_]
+  (jar nil)
+  (b/install {:basis     @basis
+              :lib       lib
+              :version   version
+              :jar-file  jar-file
+              :class-dir class-dir}))

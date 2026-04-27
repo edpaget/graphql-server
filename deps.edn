@@ -37,4 +37,11 @@
    :exec-fn    cljfmt.tool/fix}
   :outdated
   {:extra-deps {com.github.liquidz/antq {:mvn/version "2.11.1276"}}
-   :main-opts  ["-m" "antq.core"]}}}
+   :main-opts  ["-m" "antq.core"]}
+  :build
+  {:deps       {io.github.clojure/tools.build {:mvn/version "0.10.7"}}
+   :ns-default build}
+  :deploy
+  {:extra-deps {slipset/deps-deploy {:mvn/version "0.2.3"}}
+   :exec-fn    deps-deploy.deps-deploy/deploy
+   :exec-args  {:installer :remote}}}}

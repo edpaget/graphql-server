@@ -1,0 +1,163 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version bump level"
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@v6
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Configure git user
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Read current version
+        id: current
+        run: |
+          version=$(tr -d '[:space:]' < VERSION)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Current version: $version"
+
+      - name: Compute release version
+        id: release
+        run: |
+          base="${{ steps.current.outputs.version }}"
+          base="${base%-SNAPSHOT}"
+          if ! echo "$base" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::VERSION is not in X.Y.Z[-SNAPSHOT] form: ${{ steps.current.outputs.version }}"
+            exit 1
+          fi
+          IFS='.' read -r major minor patch <<< "$base"
+          case "${{ inputs.bump }}" in
+            major)
+              major=$((major + 1))
+              minor=0
+              patch=0
+              ;;
+            minor)
+              minor=$((minor + 1))
+              patch=0
+              ;;
+            patch)
+              # Drop-snapshot semantics: X.Y.Z-SNAPSHOT releases as X.Y.Z.
+              ;;
+          esac
+          version="${major}.${minor}.${patch}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "major=$major" >> "$GITHUB_OUTPUT"
+          echo "minor=$minor" >> "$GITHUB_OUTPUT"
+          echo "patch=$patch" >> "$GITHUB_OUTPUT"
+          echo "Release version: $version"
+
+      - name: Compute next snapshot
+        id: snapshot
+        run: |
+          next_patch=$((${{ steps.release.outputs.patch }} + 1))
+          snapshot="${{ steps.release.outputs.major }}.${{ steps.release.outputs.minor }}.${next_patch}-SNAPSHOT"
+          echo "version=$snapshot" >> "$GITHUB_OUTPUT"
+          echo "Next snapshot: $snapshot"
+
+      - name: Validate tag uniqueness
+        run: |
+          tag="v${{ steps.release.outputs.version }}"
+          if git rev-parse "$tag" >/dev/null 2>&1; then
+            echo "::error::Tag $tag already exists"
+            exit 1
+          fi
+
+      - name: Verify CI checks passed
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          SHA=$(git rev-parse HEAD)
+          for CHECK in "Lint and Format" "Test"; do
+            CONCLUSION=$(gh api "repos/${{ github.repository }}/commits/${SHA}/check-runs" \
+              --jq ".check_runs[] | select(.name == \"${CHECK}\") | .conclusion" | head -1)
+            if [ "$CONCLUSION" != "success" ]; then
+              echo "::error::Required check '${CHECK}' has not passed (status: ${CONCLUSION:-not found})"
+              exit 1
+            fi
+          done
+
+      - name: Update VERSION
+        run: echo "${{ steps.release.outputs.version }}" > VERSION
+
+      - name: Update CHANGELOG.md
+        run: |
+          version="${{ steps.release.outputs.version }}"
+          previous="${{ steps.current.outputs.version }}"
+          previous="${previous%-SNAPSHOT}"
+          date=$(date +%Y-%m-%d)
+          repo="${{ github.repository }}"
+          sed -i "s|^## \[Unreleased\]$|## [Unreleased]\n\n## [${version}] - ${date}|" CHANGELOG.md
+          sed -i "s|^\[Unreleased\]:.*$|[Unreleased]: https://github.com/${repo}/compare/v${version}...HEAD\n[${version}]: https://github.com/${repo}/releases/tag/v${version}|" CHANGELOG.md
+
+      - name: Update README.md (stable version)
+        run: |
+          sed -i 's|net.carcdr/graphql-server {:mvn/version "[0-9]\+\.[0-9]\+\.[0-9]\+"}|net.carcdr/graphql-server {:mvn/version "${{ steps.release.outputs.version }}"}|' README.md
+
+      - name: Commit release
+        run: |
+          git add VERSION CHANGELOG.md README.md
+          git commit -m "release: v${{ steps.release.outputs.version }}"
+          git push origin main
+
+      - name: Tag and push
+        run: |
+          tag="v${{ steps.release.outputs.version }}"
+          git tag "$tag"
+          git push origin "$tag"
+
+      - uses: DeLaGuardo/setup-clojure@13.5
+        with:
+          cli: latest
+
+      - uses: actions/cache@v5
+        with:
+          path: |
+            ~/.m2/repository
+            ~/.gitlibs
+            ~/.deps.clj
+          key: deps-${{ hashFiles('deps.edn') }}
+          restore-keys: deps-
+
+      - name: Build JAR
+        run: clojure -T:build jar
+
+      - name: Deploy to Clojars
+        run: clojure -X:deploy :artifact '"target/graphql-server-${{ steps.release.outputs.version }}.jar"' :pom-file '"target/classes/META-INF/maven/net.carcdr/graphql-server/pom.xml"'
+        env:
+          CLOJARS_USERNAME: ${{ secrets.CLOJARS_USERNAME }}
+          CLOJARS_PASSWORD: ${{ secrets.CLOJARS_PASSWORD }}
+
+      - name: Bump to next snapshot
+        run: |
+          echo "${{ steps.snapshot.outputs.version }}" > VERSION
+          sed -i 's|net.carcdr/graphql-server {:mvn/version "[0-9]\+\.[0-9]\+\.[0-9]\+-SNAPSHOT"}|net.carcdr/graphql-server {:mvn/version "${{ steps.snapshot.outputs.version }}"}|' README.md
+          git add VERSION README.md
+          git commit -m "chore: prepare ${{ steps.snapshot.outputs.version }} for next development cycle"
+          git push origin main

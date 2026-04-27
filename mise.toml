@@ -1,0 +1,2 @@
+[env]
+RDM_DEFAULT_PROJECT = "graphql-server"

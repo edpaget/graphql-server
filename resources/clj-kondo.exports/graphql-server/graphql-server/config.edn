@@ -1,0 +1,5 @@
+{:hooks {:analyze-call {graphql-server.core/defresolver hooks.graphql-server.core/defresolver
+                        graphql-server.core/def-resolver-map hooks.graphql-server.core/def-resolver-map}}
+ :lint-as {graphql-server.core/defresolver clj-kondo.lint-as/def-catch-all
+           graphql-server.core/defstreamer clj-kondo.lint-as/def-catch-all
+           graphql-server.core/def-resolver-map clj-kondo.lint-as/def-catch-all}}

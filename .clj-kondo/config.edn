@@ -1,0 +1,17 @@
+{:lint-as {graphql-server.core/defresolver clj-kondo.lint-as/def-catch-all
+           graphql-server.core/defstreamer clj-kondo.lint-as/def-catch-all
+           graphql-server.core/def-resolver-map clj-kondo.lint-as/def-catch-all}
+ :hooks {:analyze-call {graphql-server.core/defresolver hooks.graphql-server.core/defresolver
+                        graphql-server.core/def-resolver-map hooks.graphql-server.core/def-resolver-map}}
+ :linters {:unresolved-symbol {:exclude [resolvers
+                                         Query-gameState
+                                         Query-looseBall]}
+           :unresolved-var {:exclude [graphql-server.ring-test/resolvers
+                                      graphql-server.ring-test/Query-gameState
+                                      graphql-server.ring-test/Query-looseBall
+                                      graphql-server.test-resolvers/resolvers
+                                      graphql-server.test-resolvers/Query-greet
+                                      graphql-server.test-resolvers-with-middleware/resolvers
+                                      graphql-server.test-streamers/resolvers
+                                      graphql-server.test-streamers/Subscription-messageAdded
+                                      graphql-server.test-streamers/Subscription-gameUpdated]}}}

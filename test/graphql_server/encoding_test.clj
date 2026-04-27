@@ -26,15 +26,15 @@
 (def ^:private Person
   [:multi
    {:graphql/type :Person
-    :dispatch :type}
+    :dispatch     :type}
    [:user User]
    [:admin AdminUser]])
 
 (deftest encode-transforms-keys-test
   (testing "encode transforms kebab-case keys to camelCase"
-    (let [data   {:user-id #uuid "550e8400-e29b-41d4-a716-446655440000"
+    (let [data   {:user-id   #uuid "550e8400-e29b-41d4-a716-446655440000"
                   :user-name "Alice"
-                  :status :test.models.status/ACTIVE}
+                  :status    :test.models.status/ACTIVE}
           result (impl/encode data User)]
       (is (= #uuid "550e8400-e29b-41d4-a716-446655440000" (:userId result)))
       (is (= "Alice" (:userName result)))
@@ -43,22 +43,22 @@
 
 (deftest encode-transforms-enums-test
   (testing "encode transforms namespaced keyword enums to strings"
-    (let [data   {:user-id #uuid "550e8400-e29b-41d4-a716-446655440000"
+    (let [data   {:user-id   #uuid "550e8400-e29b-41d4-a716-446655440000"
                   :user-name "Alice"
-                  :status :test.models.status/ACTIVE}
+                  :status    :test.models.status/ACTIVE}
           result (impl/encode data User)]
       (is (= "ACTIVE" (:status result))))))
 
 (deftest merge-tag-with-type-test
   (testing "merge-tag-with-type creates a function that tags data with its concrete type"
     (let [tagger     (impl/merge-tag-with-type Person)
-          user-data  {:type :user
-                      :user-id #uuid "550e8400-e29b-41d4-a716-446655440000"
+          user-data  {:type      :user
+                      :user-id   #uuid "550e8400-e29b-41d4-a716-446655440000"
                       :user-name "Alice"
-                      :status :test.models.status/ACTIVE}
-          admin-data {:type :admin
-                      :user-id #uuid "550e8400-e29b-41d4-a716-446655440000"
-                      :user-name "Bob"
+                      :status    :test.models.status/ACTIVE}
+          admin-data {:type        :admin
+                      :user-id     #uuid "550e8400-e29b-41d4-a716-446655440000"
+                      :user-name   "Bob"
                       :admin-level 5}]
       (is (= :User (tagger user-data)))
       (is (= :AdminUser (tagger admin-data))))))
@@ -66,10 +66,10 @@
 (deftest wrap-resolver-with-encoding-test
   (testing "wrap-resolver-with-encoding wraps resolver with encoding and tagging"
     (let [resolver (fn [_ctx _args _value]
-                     {:type :user
-                      :user-id #uuid "550e8400-e29b-41d4-a716-446655440000"
+                     {:type      :user
+                      :user-id   #uuid "550e8400-e29b-41d4-a716-446655440000"
                       :user-name "Alice"
-                      :status :test.models.status/ACTIVE})
+                      :status    :test.models.status/ACTIVE})
           wrapped  (impl/wrap-resolver-with-encoding resolver Person)
           result   (wrapped nil nil nil)]
       (is (= #uuid "550e8400-e29b-41d4-a716-446655440000" (:userId result)))
@@ -79,9 +79,9 @@
 
   (testing "wrap-resolver-with-encoding works with simple map types"
     (let [resolver (fn [_ctx _args _value]
-                     {:user-id #uuid "550e8400-e29b-41d4-a716-446655440000"
+                     {:user-id   #uuid "550e8400-e29b-41d4-a716-446655440000"
                       :user-name "Alice"
-                      :status :test.models.status/ACTIVE})
+                      :status    :test.models.status/ACTIVE})
           wrapped  (impl/wrap-resolver-with-encoding resolver User)
           result   (wrapped nil nil nil)]
       (is (= #uuid "550e8400-e29b-41d4-a716-446655440000" (:userId result)))
@@ -91,9 +91,9 @@
 
   (testing "wrap-resolver-with-encoding unwraps :maybe types"
     (let [resolver (fn [_ctx _args _value]
-                     {:user-id #uuid "550e8400-e29b-41d4-a716-446655440000"
+                     {:user-id   #uuid "550e8400-e29b-41d4-a716-446655440000"
                       :user-name "Alice"
-                      :status :test.models.status/ACTIVE})
+                      :status    :test.models.status/ACTIVE})
           wrapped  (impl/wrap-resolver-with-encoding resolver [:maybe User])
           result   (wrapped nil nil nil)]
       (is (= #uuid "550e8400-e29b-41d4-a716-446655440000" (:userId result)))
@@ -114,13 +114,13 @@
 
   (testing "wrap-resolver-with-encoding handles collection results"
     (let [resolver (fn [_ctx _args _value]
-                     [{:type :user
-                       :user-id #uuid "550e8400-e29b-41d4-a716-446655440000"
+                     [{:type      :user
+                       :user-id   #uuid "550e8400-e29b-41d4-a716-446655440000"
                        :user-name "Alice"
-                       :status :test.models.status/ACTIVE}
-                      {:type :admin
-                       :user-id #uuid "660e8400-e29b-41d4-a716-446655440000"
-                       :user-name "Bob"
+                       :status    :test.models.status/ACTIVE}
+                      {:type        :admin
+                       :user-id     #uuid "660e8400-e29b-41d4-a716-446655440000"
+                       :user-name   "Bob"
                        :admin-level 5}])
           wrapped  (impl/wrap-resolver-with-encoding resolver Person)
           result   (wrapped nil nil nil)]
@@ -138,14 +138,14 @@
                     [:data [:vector Person]]
                     [:page-info PageInfo]]
           resolver (fn [_ctx _args _value]
-                     {:data [{:type :user
-                              :user-id #uuid "550e8400-e29b-41d4-a716-446655440000"
-                              :user-name "Alice"
-                              :status :test.models.status/ACTIVE}
-                             {:type :admin
-                              :user-id #uuid "660e8400-e29b-41d4-a716-446655440000"
-                              :user-name "Bob"
-                              :admin-level 5}]
+                     {:data      [{:type      :user
+                                   :user-id   #uuid "550e8400-e29b-41d4-a716-446655440000"
+                                   :user-name "Alice"
+                                   :status    :test.models.status/ACTIVE}
+                                  {:type        :admin
+                                   :user-id     #uuid "660e8400-e29b-41d4-a716-446655440000"
+                                   :user-name   "Bob"
+                                   :admin-level 5}]
                       :page-info {:total 2 :offset 0}})
           wrapped  (impl/wrap-resolver-with-encoding resolver Response)
           result   (wrapped nil nil nil)]
@@ -164,7 +164,7 @@
           resolver   (fn [_ctx args _value] args)
           wrapped    (impl/coerce-args arg-schema resolver)
           result     (wrapped nil {:userName "Alice"
-                                   :userId "550e8400-e29b-41d4-a716-446655440000"} nil)]
+                                   :userId   "550e8400-e29b-41d4-a716-446655440000"} nil)]
       (is (= "Alice" (:user-name result)))
       (is (= #uuid "550e8400-e29b-41d4-a716-446655440000" (:user-id result)))
       (is (not (contains? result :userName)))
@@ -203,10 +203,10 @@
     (let [Container [:map {:graphql/type :Container}
                      [:item [:maybe Person]]]
           resolver  (fn [_ctx _args _value]
-                      {:item {:type :user
-                              :user-id #uuid "550e8400-e29b-41d4-a716-446655440000"
+                      {:item {:type      :user
+                              :user-id   #uuid "550e8400-e29b-41d4-a716-446655440000"
                               :user-name "Alice"
-                              :status :test.models.status/ACTIVE}})
+                              :status    :test.models.status/ACTIVE}})
           wrapped   (impl/wrap-resolver-with-encoding resolver Container)
           result    (wrapped nil nil nil)]
       (is (= :Container (:com.walmartlabs.lacinia.schema/type-name (meta result))))
@@ -218,10 +218,10 @@
           Outer    [:map {:graphql/type :Outer}
                     [:inner [:maybe Inner]]]
           resolver (fn [_ctx _args _value]
-                     {:inner {:person {:type :user
-                                       :user-id #uuid "550e8400-e29b-41d4-a716-446655440000"
+                     {:inner {:person {:type      :user
+                                       :user-id   #uuid "550e8400-e29b-41d4-a716-446655440000"
                                        :user-name "Alice"
-                                       :status :test.models.status/ACTIVE}}})
+                                       :status    :test.models.status/ACTIVE}}})
           wrapped  (impl/wrap-resolver-with-encoding resolver Outer)
           result   (wrapped nil nil nil)]
       (is (= :Outer (:com.walmartlabs.lacinia.schema/type-name (meta result))))
@@ -234,10 +234,10 @@
           Outer    [:map {:graphql/type :Outer}
                     [:inner [:maybe Inner]]]
           resolver (fn [_ctx _args _value]
-                     {:inner {:person {:type :user
-                                       :user-id #uuid "550e8400-e29b-41d4-a716-446655440000"
+                     {:inner {:person {:type      :user
+                                       :user-id   #uuid "550e8400-e29b-41d4-a716-446655440000"
                                        :user-name "Alice"
-                                       :status :test.models.status/ACTIVE}}})
+                                       :status    :test.models.status/ACTIVE}}})
           wrapped  (impl/wrap-resolver-with-encoding resolver [:maybe Outer])
           result   (wrapped nil nil nil)]
       (is (= :Outer (:com.walmartlabs.lacinia.schema/type-name (meta result))))
@@ -260,7 +260,7 @@
           GameResponse  [:map {:graphql/type :Game}
                          [:game-state [:maybe GameState]]]
           resolver      (fn [_ctx _args _value]
-                          {:game-state {:ball {:status :possessed
+                          {:game-state {:ball {:status    :possessed
                                                :holder-id "player-1"}}})
           wrapped       (impl/wrap-resolver-with-encoding resolver [:maybe GameResponse])
           result        (wrapped nil nil nil)]
@@ -283,7 +283,7 @@
           GameResponse  [:map {:graphql/type :Game}
                          [:game-state [:maybe GameState]]]
           resolver      (fn [_ctx _args _value]
-                          {:game-state {:ball {:status :loose
+                          {:game-state {:ball {:status   :loose
                                                :position [1 2]}}})
           wrapped       (impl/wrap-resolver-with-encoding resolver [:maybe GameResponse])
           result        (wrapped nil nil nil)]
@@ -305,7 +305,7 @@
                          [:game-state [:maybe GameState]]]
           resolver      (fn [_ctx _args _value]
                           ;; Simulating JSON parse where keywords become strings
-                          {:game-state {:ball {:status "possessed"
+                          {:game-state {:ball {:status    "possessed"
                                                :holder-id "player-1"}}})
           wrapped       (impl/wrap-resolver-with-encoding resolver [:maybe GameResponse])
           result        (wrapped nil nil nil)]
@@ -334,7 +334,7 @@
           GameResponse  [:map {:graphql/type :Game}
                          [:game-state [:maybe GameState]]]
           resolver      (fn [_ctx _args _value]
-                          {:game-state {:ball {:status :POSSESSED
+                          {:game-state {:ball {:status    :POSSESSED
                                                :holder-id "player-1"}}})
           wrapped       (impl/wrap-resolver-with-encoding resolver [:maybe GameResponse])
           result        (wrapped nil nil nil)]

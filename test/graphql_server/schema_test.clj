@@ -146,8 +146,8 @@
                 {:user {:type '(non-null :User)}}}
                :User
                {:fields
-                {:id {:type '(non-null Uuid)}
-                 :name {:type '(non-null String)}
+                {:id    {:type '(non-null Uuid)}
+                 :name  {:type '(non-null String)}
                  :email {:type '(non-null String)}}}}}
              result)))))
 
@@ -162,8 +162,8 @@
                           [:address address-schema]]
           resolver-map   {[:Query :user]
                           [[:=> [:cat :any :any :any] user-schema]
-                           (fn [_ _ _] {:id (random-uuid)
-                                        :name "Alice"
+                           (fn [_ _ _] {:id      (random-uuid)
+                                        :name    "Alice"
                                         :address {:street "123 Main" :city "NYC"}})]}
           result         (schema/->graphql-schema resolver-map)]
       (is (= {:objects
@@ -172,13 +172,13 @@
                 {:user {:type '(non-null :User)}}}
                :User
                {:fields
-                {:id {:type '(non-null Uuid)}
-                 :name {:type '(non-null String)}
+                {:id      {:type '(non-null Uuid)}
+                 :name    {:type '(non-null String)}
                  :address {:type '(non-null :Address)}}}
                :Address
                {:fields
                 {:street {:type '(non-null String)}
-                 :city {:type '(non-null String)}}}}}
+                 :city   {:type '(non-null String)}}}}}
              result)))))
 
 (deftest query-with-interface-return
@@ -210,7 +210,7 @@
                         [:type [:= :org]]
                         [:orgName :string]]
           actor-schema [:multi {:graphql/type :Actor
-                                :dispatch :type}
+                                :dispatch     :type}
                         [:user user-schema]
                         [:org org-schema]]
           resolver-map {[:Query :actor]
@@ -223,11 +223,11 @@
                 {:actor {:type '(non-null :Actor)}}}
                :User
                {:fields
-                {:id {:type '(non-null Uuid)}
+                {:id   {:type '(non-null Uuid)}
                  :name {:type '(non-null String)}}}
                :Organization
                {:fields
-                {:id {:type '(non-null Uuid)}
+                {:id      {:type '(non-null Uuid)}
                  :orgName {:type '(non-null String)}}}}
               :unions
               {:Actor {:members [:User :Organization]}}}
@@ -237,7 +237,7 @@
   (testing "Query field returning object that implements interface"
     (let [node-interface [:map {:graphql/interface :Node}
                           [:id :uuid]]
-          user-schema    [:map {:graphql/type :User
+          user-schema    [:map {:graphql/type       :User
                                 :graphql/implements [node-interface]}
                           [:id :uuid]
                           [:name :string]]
@@ -251,9 +251,9 @@
                 {:user {:type '(non-null :User)}}}
                :User
                {:fields
-                {:id {:type '(non-null Uuid)}
+                {:id   {:type '(non-null Uuid)}
                  :name {:type '(non-null String)}}
-                :implements [:Node]}}
+                :implements                        [:Node]}}
               :interfaces
               {:Node
                {:fields
@@ -320,13 +320,13 @@
                               :args {:input {:type '(non-null :CreateUserInput)}}}}}
                :User
                {:fields
-                {:id {:type '(non-null Uuid)}
-                 :name {:type '(non-null String)}
+                {:id    {:type '(non-null Uuid)}
+                 :name  {:type '(non-null String)}
                  :email {:type '(non-null String)}}}}
               :input-objects
               {:CreateUserInput
                {:fields
-                {:name {:type '(non-null String)}
+                {:name  {:type '(non-null String)}
                  :email {:type '(non-null String)}}}}}
              result)))))
 
@@ -368,7 +368,7 @@
                 {:user {:type '(non-null :User)}}}
                :User
                {:fields
-                {:id {:type '(non-null Uuid)}
+                {:id   {:type '(non-null Uuid)}
                  :name {:type '(non-null String)}}}}}
              result)))))
 
@@ -387,7 +387,7 @@
                 {:event {:type '(non-null :Event)}}}
                :Event
                {:fields
-                {:id {:type '(non-null Uuid)}
+                {:id        {:type '(non-null Uuid)}
                  :createdAt {:type '(non-null Date)}}}}}
              result)))))
 
@@ -414,16 +414,16 @@
                               :args {:input {:type '(non-null :CreatePostInput)}}}}}
                :Post
                {:fields
-                {:id {:type '(non-null Uuid)}
+                {:id    {:type '(non-null Uuid)}
                  :title {:type '(non-null String)}}}}
               :input-objects
               {:CreatePostInput
                {:fields
-                {:title {:type '(non-null String)}
+                {:title  {:type '(non-null String)}
                  :author {:type '(non-null :AuthorInput)}}}
                :AuthorInput
                {:fields
-                {:name {:type '(non-null String)}
+                {:name  {:type '(non-null String)}
                  :email {:type '(non-null String)}}}}}
              result)))))
 
@@ -437,13 +437,13 @@
       (is (= {:objects
               {:Query
                {:fields
-                {:hello {:type '(non-null String)
+                {:hello {:type        '(non-null String)
                          :description "Returns a greeting"}}}}}
              result)))))
 
 (deftest query-with-object-description
   (testing "Object type with :graphql/description"
-    (let [user-schema  [:map {:graphql/type :User
+    (let [user-schema  [:map {:graphql/type        :User
                               :graphql/description "A user in the system"}
                         [:id :uuid]
                         [:name :string]]
@@ -457,9 +457,9 @@
                 {:user {:type '(non-null :User)}}}
                :User
                {:fields
-                {:id {:type '(non-null Uuid)}
+                {:id   {:type '(non-null Uuid)}
                  :name {:type '(non-null String)}}
-                :description "A user in the system"}}}
+                :description                       "A user in the system"}}}
              result)))))
 
 (deftest query-with-field-property-description
@@ -477,8 +477,8 @@
                 {:user {:type '(non-null :User)}}}
                :User
                {:fields
-                {:id {:type '(non-null Uuid)}
-                 :name {:type '(non-null String)
+                {:id   {:type '(non-null Uuid)}
+                 :name {:type        '(non-null String)
                         :description "The user's full name"}}}}}
              result)))))
 
@@ -486,7 +486,7 @@
   (testing "Enum with :graphql/description"
     (let [resolver-map {[:Query :status]
                         [[:=> [:cat :any :any :any]
-                          [:enum {:graphql/type :Status
+                          [:enum {:graphql/type        :Status
                                   :graphql/description "User account status"}
                            :active :inactive :pending]]
                          (fn [_ _ _] :active)]}
@@ -496,13 +496,13 @@
                {:fields
                 {:status {:type '(non-null :Status)}}}}
               :enums
-              {:Status {:values #{"ACTIVE" "INACTIVE" "PENDING"}
+              {:Status {:values      #{"ACTIVE" "INACTIVE" "PENDING"}
                         :description "User account status"}}}
              result)))))
 
 (deftest query-with-interface-description
   (testing "Interface with :graphql/description"
-    (let [node-interface [:map {:graphql/interface :Node
+    (let [node-interface [:map {:graphql/interface   :Node
                                 :graphql/description "Object with unique identifier"}
                           [:id :uuid]]
           resolver-map   {[:Query :node]
@@ -517,7 +517,7 @@
               {:Node
                {:fields
                 {:id {:type '(non-null Uuid)}}
-                :description "Object with unique identifier"}}}
+                :description                   "Object with unique identifier"}}}
              result)))))
 
 (deftest query-with-optional-object-field
@@ -536,8 +536,8 @@
                 {:user {:type '(non-null :User)}}}
                :User
                {:fields
-                {:id {:type '(non-null Uuid)}
-                 :name {:type '(non-null String)}
+                {:id       {:type '(non-null Uuid)}
+                 :name     {:type '(non-null String)}
                  :nickname {:type 'String}}}}}
              result)))))
 
@@ -560,13 +560,13 @@
                 {:user {:type '(non-null :User)}}}
                :User
                {:fields
-                {:id {:type '(non-null Uuid)}
-                 :name {:type '(non-null String)}
+                {:id      {:type '(non-null Uuid)}
+                 :name    {:type '(non-null String)}
                  :address {:type :Address}}}
                :Address
                {:fields
                 {:street {:type '(non-null String)}
-                 :city {:type '(non-null String)}}}}}
+                 :city   {:type '(non-null String)}}}}}
              result)))))
 
 (deftest query-with-optional-and-maybe-field
@@ -585,9 +585,9 @@
                 {:user {:type '(non-null :User)}}}
                :User
                {:fields
-                {:id {:type '(non-null Uuid)}
+                {:id   {:type '(non-null Uuid)}
                  :name {:type '(non-null String)}
-                 :bio {:type 'String}}}}}
+                 :bio  {:type 'String}}}}}
              result)))))
 
 (deftest mutation-with-optional-input-field
@@ -609,12 +609,12 @@
                               :args {:input {:type '(non-null :CreateUserInput)}}}}}
                :User
                {:fields
-                {:id {:type '(non-null Uuid)}
+                {:id   {:type '(non-null Uuid)}
                  :name {:type '(non-null String)}}}}
               :input-objects
               {:CreateUserInput
                {:fields
-                {:name {:type '(non-null String)}
+                {:name  {:type '(non-null String)}
                  :email {:type 'String}}}}}
              result)))))
 
@@ -662,10 +662,10 @@
                {:fields
                 {:usersByStatus {:type '(non-null :Priority)
                                  :args {:status {:type '(non-null :Status)}
-                                        :role {:type '(non-null :Role)}}}}}}}
+                                        :role   {:type '(non-null :Role)}}}}}}}
              (select-keys result [:objects])))
-      (is (= {:Status {:values #{"ACTIVE" "INACTIVE" "PENDING"}}
-              :Role {:values #{"ADMIN" "USER" "GUEST"}}
+      (is (= {:Status   {:values #{"ACTIVE" "INACTIVE" "PENDING"}}
+              :Role     {:values #{"ADMIN" "USER" "GUEST"}}
               :Priority {:values #{"LOW" "MEDIUM" "HIGH"}}}
              (:enums result))))))
 
@@ -687,7 +687,7 @@
                 {:event {:type '(non-null :Event)}}}
                :Event
                {:fields
-                {:id {:type '(non-null Uuid)}
+                {:id         {:type '(non-null Uuid)}
                  :occurredAt {:type '(non-null Date)}}}}}
              result)))))
 
@@ -709,7 +709,7 @@
                 {:event {:type '(non-null :Event)}}}
                :Event
                {:fields
-                {:id {:type '(non-null Uuid)}
+                {:id        {:type '(non-null Uuid)}
                  :deletedAt {:type 'Date}}}}}
              result)))))
 
@@ -731,7 +731,7 @@
                 {:event {:type '(non-null :Event)}}}
                :Event
                {:fields
-                {:id {:type '(non-null Uuid)}
+                {:id        {:type '(non-null Uuid)}
                  :deletedAt {:type 'Date}}}}}
              result)))))
 
@@ -764,7 +764,7 @@
                 {:config {:type '(non-null :Config)}}}
                :Config
                {:fields
-                {:id {:type '(non-null Uuid)}
+                {:id       {:type '(non-null Uuid)}
                  :settings {:type '(non-null Json)}}}}}
              result)))))
 
@@ -783,7 +783,7 @@
                 {:point {:type '(non-null :Point)}}}
                :Point
                {:fields
-                {:id {:type '(non-null Uuid)}
+                {:id          {:type '(non-null Uuid)}
                  :coordinates {:type '(non-null Json)}}}}}
              result)))))
 
@@ -802,7 +802,7 @@
                 {:data {:type '(non-null :Data)}}}
                :Data
                {:fields
-                {:id {:type '(non-null Uuid)}
+                {:id       {:type '(non-null Uuid)}
                  :metadata {:type '(non-null Json)}}}}}
              result)))))
 
@@ -821,7 +821,7 @@
                 {:item {:type '(non-null :Item)}}}
                :Item
                {:fields
-                {:id {:type '(non-null Uuid)}
+                {:id     {:type '(non-null Uuid)}
                  :status {:type '(non-null String)}}}}}
              result)))))
 
@@ -840,7 +840,7 @@
                 {:config {:type '(non-null :Config)}}}
                :Config
                {:fields
-                {:id {:type '(non-null Uuid)}
+                {:id       {:type '(non-null Uuid)}
                  :settings {:type 'Json}}}}}
              result)))))
 
@@ -859,7 +859,7 @@
                 {:point {:type '(non-null :Point)}}}
                :Point
                {:fields
-                {:id {:type '(non-null Uuid)}
+                {:id          {:type '(non-null Uuid)}
                  :coordinates {:type 'Json}}}}}
              result)))))
 
@@ -875,7 +875,7 @@
           result       (schema/->graphql-schema resolver-map)]
       (is (= {:objects
               {:Query {:fields {:point {:type '(non-null :Point)}}}
-               :Point {:fields {:id {:type '(non-null Uuid)}
+               :Point {:fields {:id       {:type '(non-null Uuid)}
                                 :position {:type '(non-null HexPosition)}}}}}
              result)))))
 
@@ -891,7 +891,7 @@
           result       (schema/->graphql-schema resolver-map)]
       (is (= {:objects
               {:Query {:fields {:point {:type '(non-null :Point)}}}
-               :Point {:fields {:id {:type '(non-null Uuid)}
+               :Point {:fields {:id       {:type '(non-null Uuid)}
                                 :position {:type 'HexPosition}}}}}
              result)))))
 
@@ -923,7 +923,7 @@
               :objects
               {:GameState
                {:fields
-                {:id {:type '(non-null Uuid)}
+                {:id    {:type '(non-null Uuid)}
                  :phase {:type '(non-null String)}}}}}
              result)))))
 
@@ -946,7 +946,7 @@
                          "Subscribe to game state changes"]}
           result       (schema/->graphql-schema resolver-map)]
       (is (= {:subscriptions
-              {:gameUpdated {:type '(non-null String)
+              {:gameUpdated {:type        '(non-null String)
                              :description "Subscribe to game state changes"}}}
              result)))))
 
@@ -979,11 +979,11 @@
                          (fn [_ _] nil)]}
           result       (schema/->graphql-schema resolver-map)]
       (is (= {:objects
-              {:Query {:fields {:game {:type '(non-null :Game)
-                                       :args {:id {:type '(non-null Uuid)}}}}}
+              {:Query    {:fields {:game {:type '(non-null :Game)
+                                          :args {:id {:type '(non-null Uuid)}}}}}
                :Mutation {:fields {:createGame {:type '(non-null :Game)}}}
-               :Game {:fields {:id {:type '(non-null Uuid)}
-                               :status {:type '(non-null String)}}}}
+               :Game     {:fields {:id     {:type '(non-null Uuid)}
+                                   :status {:type '(non-null String)}}}}
               :subscriptions
               {:gameUpdated {:type '(non-null :Game)
                              :args {:gameId {:type '(non-null Uuid)}}}}}

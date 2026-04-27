@@ -239,7 +239,7 @@
       (log/error e "Internal Error")
       (json-response
        {:errors [{:message (.getMessage e)
-                  :type (or (some-> e ex-data :type name) "internal-error")}]}
+                  :type    (or (some-> e ex-data :type name) "internal-error")}]}
        500))))
 
 (defn- get-subscription-field-name
@@ -281,7 +281,7 @@
       (log/error e "Subscription error")
       (json-response
        {:errors [{:message (.getMessage e)
-                  :type (or (some-> e ex-data :type name) "subscription-error")}]}
+                  :type    (or (some-> e ex-data :type name) "subscription-error")}]}
        400))))
 
 (defn- parse-query-params
@@ -347,13 +347,13 @@
             (wrap-json-body {:keywords? true})))"
   [handler {:keys [path resolver-map context-fn enable-graphiql? scalars
                    enable-subscriptions? subscription-path cors-origin]
-            :or {path "/graphql"
-                 context-fn (fn [req] {:request req})
-                 enable-graphiql? true
-                 scalars {}
-                 enable-subscriptions? false
-                 subscription-path "/graphql/subscriptions"
-                 cors-origin "*"}}]
+            :or   {path                  "/graphql"
+                   context-fn            (fn [req] {:request req})
+                   enable-graphiql?      true
+                   scalars               {}
+                   enable-subscriptions? false
+                   subscription-path     "/graphql/subscriptions"
+                   cors-origin           "*"}}]
   (let [compiled-schema (build-lacinia-schema resolver-map scalars)]
     (fn [request]
       (let [uri    (:uri request)

@@ -183,7 +183,7 @@
         (catch Exception e
           (log/error e "Error during coercion")
           {:errors {:message (ex-message e)
-                    :type (or (:type (ex-data e)) :unknown)}})))))
+                    :type    (or (:type (ex-data e)) :unknown)}})))))
 
 (def ^:private encoding-transformer
   "Composite transformer for encoding data to GraphQL outputs.

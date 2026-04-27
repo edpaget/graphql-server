@@ -63,10 +63,10 @@
   ([query variables extra-keys]
    (merge
     {:request-method :post
-     :uri "/graphql"
-     :headers {"content-type" "application/json"}
-     :body (cond-> {:query query}
-             variables (assoc :variables variables))}
+     :uri            "/graphql"
+     :headers        {"content-type" "application/json"}
+     :body           (cond-> {:query query}
+                       variables (assoc :variables variables))}
     extra-keys)))
 
 (defn- passthrough-handler
@@ -146,7 +146,7 @@
     (let [handler              (ring/graphql-middleware
                                 passthrough-handler
                                 {:resolver-map resolvers
-                                 :path "/api/graphql"})
+                                 :path         "/api/graphql"})
           default-path-request (make-graphql-request "{ hello }")
           custom-path-request  (assoc default-path-request :uri "/api/graphql")
           default-response     (handler default-path-request)
@@ -161,7 +161,7 @@
     (let [handler  (ring/graphql-middleware
                     passthrough-handler
                     {:resolver-map resolvers
-                     :context-fn (fn [req] {:request req})})
+                     :context-fn   (fn [req] {:request req})})
           request  (make-graphql-request "{ contextValue }" nil {:user "Alice"})
           response (handler request)
           body     (json/parse-string (:body response) true)]
@@ -174,7 +174,7 @@
                     passthrough-handler
                     {:resolver-map resolvers})
           request  {:request-method :put
-                    :uri "/graphql"}
+                    :uri            "/graphql"}
           response (handler request)]
       (is (= "not-graphql" (:body response))))))
 
@@ -184,7 +184,7 @@
                     passthrough-handler
                     {:resolver-map resolvers})
           request  {:request-method :post
-                    :uri "/api/other"}
+                    :uri            "/api/other"}
           response (handler request)]
       (is (= "not-graphql" (:body response))))))
 
@@ -205,7 +205,7 @@
                     passthrough-handler
                     {:resolver-map resolvers})
           request  {:request-method :get
-                    :uri "/graphql"}
+                    :uri            "/graphql"}
           response (handler request)]
       (is (= 200 (:status response)))
       (is (= "text/html" (get-in response [:headers "Content-Type"])))
@@ -216,10 +216,10 @@
   (testing "graphql-middleware does not serve GraphiQL when disabled"
     (let [handler  (ring/graphql-middleware
                     passthrough-handler
-                    {:resolver-map resolvers
+                    {:resolver-map     resolvers
                      :enable-graphiql? false})
           request  {:request-method :get
-                    :uri "/graphql"}
+                    :uri            "/graphql"}
           response (handler request)]
       (is (= "not-graphql" (:body response))))))
 
@@ -231,8 +231,8 @@
                     passthrough-handler
                     {:resolver-map resolvers})
           request  {:request-method :get
-                    :uri "/graphql/subscriptions"
-                    :query-string "query=subscription%20%7B%20onMessage%20%7D"}
+                    :uri            "/graphql/subscriptions"
+                    :query-string   "query=subscription%20%7B%20onMessage%20%7D"}
           response (handler request)]
       (is (= "not-graphql" (:body response))))))
 
@@ -241,12 +241,12 @@
     (let [sub-mgr  (subs/create-subscription-manager)
           handler  (ring/graphql-middleware
                     passthrough-handler
-                    {:resolver-map resolvers
+                    {:resolver-map          resolvers
                      :enable-subscriptions? true
-                     :context-fn (fn [_] {:subscription-manager sub-mgr})})
+                     :context-fn            (fn [_] {:subscription-manager sub-mgr})})
           request  {:request-method :get
-                    :uri "/graphql/subscriptions"
-                    :query-string "query=subscription%20%7B%20onMessage%20%7D"}
+                    :uri            "/graphql/subscriptions"
+                    :query-string   "query=subscription%20%7B%20onMessage%20%7D"}
           response (handler request)]
       (is (= 200 (:status response)))
       (is (= "text/event-stream" (get-in response [:headers "Content-Type"])))
@@ -257,14 +257,14 @@
     (let [sub-mgr           (subs/create-subscription-manager)
           handler           (ring/graphql-middleware
                              passthrough-handler
-                             {:resolver-map resolvers
+                             {:resolver-map          resolvers
                               :enable-subscriptions? true
-                              :context-fn (fn [_] {:subscription-manager sub-mgr})})
+                              :context-fn            (fn [_] {:subscription-manager sub-mgr})})
           graphiql-req      {:request-method :get
-                             :uri "/graphql"}
+                             :uri            "/graphql"}
           subscription-req  {:request-method :get
-                             :uri "/graphql/subscriptions"
-                             :query-string "query=subscription%20%7B%20onMessage%20%7D"}
+                             :uri            "/graphql/subscriptions"
+                             :query-string   "query=subscription%20%7B%20onMessage%20%7D"}
           graphiql-resp     (handler graphiql-req)
           subscription-resp (handler subscription-req)]
       ;; GraphiQL served at /graphql
@@ -279,10 +279,10 @@
   (testing "subscription endpoint handles OPTIONS preflight"
     (let [handler  (ring/graphql-middleware
                     passthrough-handler
-                    {:resolver-map resolvers
+                    {:resolver-map          resolvers
                      :enable-subscriptions? true})
           request  {:request-method :options
-                    :uri "/graphql/subscriptions"}
+                    :uri            "/graphql/subscriptions"}
           response (handler request)]
       (is (= 204 (:status response)))
       (is (= "GET, OPTIONS" (get-in response [:headers "Access-Control-Allow-Methods"])))
@@ -293,15 +293,15 @@
     (let [sub-mgr      (subs/create-subscription-manager)
           handler      (ring/graphql-middleware
                         passthrough-handler
-                        {:resolver-map resolvers
+                        {:resolver-map          resolvers
                          :enable-subscriptions? true
-                         :cors-origin "https://example.com"
-                         :context-fn (fn [_] {:subscription-manager sub-mgr})})
+                         :cors-origin           "https://example.com"
+                         :context-fn            (fn [_] {:subscription-manager sub-mgr})})
           options-req  {:request-method :options
-                        :uri "/graphql/subscriptions"}
+                        :uri            "/graphql/subscriptions"}
           sub-req      {:request-method :get
-                        :uri "/graphql/subscriptions"
-                        :query-string "query=subscription%20%7B%20onMessage%20%7D"}
+                        :uri            "/graphql/subscriptions"
+                        :query-string   "query=subscription%20%7B%20onMessage%20%7D"}
           options-resp (handler options-req)
           sub-resp     (handler sub-req)]
       (is (= "https://example.com" (get-in options-resp [:headers "Access-Control-Allow-Origin"])))
@@ -311,11 +311,11 @@
   (testing "subscription endpoint returns error for missing query"
     (let [handler  (ring/graphql-middleware
                     passthrough-handler
-                    {:resolver-map resolvers
+                    {:resolver-map          resolvers
                      :enable-subscriptions? true})
           request  {:request-method :get
-                    :uri "/graphql/subscriptions"
-                    :query-string ""}
+                    :uri            "/graphql/subscriptions"
+                    :query-string   ""}
           response (handler request)
           body     (json/parse-string (:body response) true)]
       (is (= 400 (:status response)))
@@ -354,16 +354,16 @@
   [:=> [:cat :any :any :any] GameState]
   [_ctx _args _value]
   {:turn-number 1
-   :ball {:status :possessed
-          :holder-id "player-1"}})
+   :ball        {:status    :possessed
+                 :holder-id "player-1"}})
 
 (defresolver :Query :looseBall
   "Returns a game state with a loose ball"
   [:=> [:cat :any :any :any] GameState]
   [_ctx _args _value]
   {:turn-number 2
-   :ball {:status :loose
-          :position [3 7]}})
+   :ball        {:status   :loose
+                 :position [3 7]}})
 
 (def ^:private union-resolvers
   (merge resolvers

@@ -52,7 +52,7 @@
   (testing "apply-middleware wraps multiple resolvers"
     (let [resolver1              (fn [_ctx _args _value] {:result "test1"})
           resolver2              (fn [_ctx _args _value] {:result "test2"})
-          resolver-map           {[:Query :test1] [:schema1 resolver1]
+          resolver-map           {[:Query :test1]    [:schema1 resolver1]
                                   [:Mutation :test2] [:schema2 resolver2]}
           wrapped                (core/apply-middleware [logging-middleware] resolver-map)
           [_schema1 wrapped-fn1] (get wrapped [:Query :test1])

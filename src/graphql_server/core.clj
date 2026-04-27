@@ -117,8 +117,8 @@
         resolver-sym      (with-meta
                             (symbol (str (name object) "-" (name action)))
                             {:graphql/resolver [object action]
-                             :graphql/schema schema
-                             :doc doc})]
+                             :graphql/schema   schema
+                             :doc              doc})]
     `(def ~resolver-sym
        (impl/wrap-resolver-with-encoding
         (impl/coerce-args
@@ -181,8 +181,8 @@
         streamer-sym               (with-meta
                                      (symbol (str (name object) "-" (name action)))
                                      {:graphql/streamer [object action]
-                                      :graphql/schema schema
-                                      :doc doc})
+                                      :graphql/schema   schema
+                                      :doc              doc})
         ;; Extract just the args binding from the 2-element body args vector
         [ctx-binding args-binding] (first body)
         user-body                  (rest body)]

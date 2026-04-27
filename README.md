@@ -26,7 +26,7 @@ artifact published to GitHub Packages on every CI-green push:
 
 ```clojure
 ;; deps.edn
-{:deps {net.carcdr/graphql-server {:mvn/version "0.1.1-SNAPSHOT"}}
+{:deps {net.carcdr/graphql-server {:mvn/version "0.1.2-SNAPSHOT"}}
  :mvn/repos
  {"github-graphql-server"
   {:url "https://maven.pkg.github.com/edpaget/graphql-server"}}}

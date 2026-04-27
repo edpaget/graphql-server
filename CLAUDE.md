@@ -95,3 +95,39 @@ If a task becomes large enough to warrant multiple phases, promote it to a roadm
 - `in-progress` → `wont-fix` — decided not to do
 - `open` → `wont-fix` — decided not to do before starting
 - `done` and `wont-fix` are terminal
+
+# Engineering conventions
+
+## Commits — Conventional Commits
+
+All commit messages follow the [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/) spec.
+
+- Format: `<type>(<scope>)?: <description>` — scope is optional.
+- Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`.
+- Use `feat!:` or a `BREAKING CHANGE:` footer for incompatible changes.
+- Keep the subject under ~72 chars, imperative mood, no trailing period.
+- The optional `Done: <roadmap>/<phase>` or `Done: task/<slug>` footer (see rdm workflow above) goes after the body, before any other footers.
+
+## Changelog — Keep a Changelog
+
+Maintain `CHANGELOG.md` per the [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) format. Update it in the same commit as the change it describes.
+
+- Sections, in order: `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, `Security`.
+- Unreleased changes go under an `## [Unreleased]` heading at the top.
+- On release, rename `Unreleased` to `## [x.y.z] - YYYY-MM-DD` and add a fresh `Unreleased` block.
+- Versions follow [SemVer](https://semver.org/). Link each version at the bottom of the file.
+- Entries describe user-visible impact, not implementation details.
+
+## Testing — TDD
+
+Write tests first. The discipline is non-negotiable for new behavior and bug fixes.
+
+1. **Red** — write a failing test that captures the desired behavior (or reproduces the bug). Run it; confirm it fails for the expected reason.
+2. **Green** — write the minimum code to make the test pass. Don't generalize yet.
+3. **Refactor** — clean up with the test as a safety net. Re-run tests after every change.
+
+Rules:
+- No production change ships without a test that fails before it and passes after.
+- For bug fixes, the regression test must reproduce the bug on the unfixed code.
+- Run the full suite (`clojure -M:test` or equivalent) before committing — not just the file you touched.
+- Prefer fast unit tests; integration tests for boundary behavior. Don't mock what you can construct.

@@ -1,0 +1,56 @@
+name: Publish
+
+on:
+  workflow_run:
+    workflows: [CI]
+    branches: [main]
+    types: [completed]
+
+jobs:
+  publish-snapshot:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: DeLaGuardo/setup-clojure@13.5
+        with:
+          cli: latest
+
+      - uses: actions/cache@v5
+        with:
+          path: |
+            ~/.m2/repository
+            ~/.gitlibs
+            ~/.deps.clj
+          key: deps-${{ hashFiles('deps.edn') }}
+          restore-keys: deps-
+
+      - name: Read version
+        id: version
+        run: echo "version=$(cat VERSION | tr -d '[:space:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Check for snapshot version
+        id: check
+        run: |
+          if echo "${{ steps.version.outputs.version }}" | grep -q SNAPSHOT; then
+            echo "is_snapshot=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Skipping snapshot publish for non-SNAPSHOT version ${{ steps.version.outputs.version }}"
+            echo "is_snapshot=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build JAR
+        if: steps.check.outputs.is_snapshot == 'true'
+        run: clojure -T:build jar
+
+      - name: Deploy to GitHub Packages
+        if: steps.check.outputs.is_snapshot == 'true'
+        run: clojure -X:deploy :artifact '"target/graphql-server-${{ steps.version.outputs.version }}.jar"' :pom-file '"target/classes/META-INF/maven/net.carcdr/graphql-server/pom.xml"'
+        env:
+          CLOJARS_URL: https://maven.pkg.github.com/${{ github.repository }}
+          CLOJARS_USERNAME: ${{ github.actor }}
+          CLOJARS_PASSWORD: ${{ secrets.GITHUB_TOKEN }}

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- Automated `-SNAPSHOT` publish to GitHub Packages on every CI-green push to `main`.
+
 ## [0.1.0] - 2026-04-27
 
 ### Added

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-04-27
+
 ### Added
 - Automated `-SNAPSHOT` publish to GitHub Packages on every CI-green push to `main`.
 - Manually-dispatched release workflow with patch/minor/major bump picker that
@@ -22,5 +24,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   built on Lacinia with Malli-driven schema generation, Ring transport,
   and core.async-based subscriptions.
 
-[Unreleased]: https://github.com/edpaget/graphql-server/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/edpaget/graphql-server/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/edpaget/graphql-server/releases/tag/v0.1.1
 [0.1.0]: https://github.com/edpaget/graphql-server/releases/tag/v0.1.0

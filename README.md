@@ -16,7 +16,7 @@ A Clojure library for defining GraphQL schemas using Malli, wrapping Lacinia wit
 Once published to Clojars, add to your `deps.edn`:
 
 ```clojure
-{:deps {net.carcdr/graphql-server {:mvn/version "0.1.0"}}}
+{:deps {net.carcdr/graphql-server {:mvn/version "0.1.1"}}}
 ```
 
 ### Snapshot stream (GitHub Packages)

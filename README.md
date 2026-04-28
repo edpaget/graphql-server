@@ -7,12 +7,10 @@ A Clojure library for defining GraphQL schemas using Malli, wrapping Lacinia wit
 ## What it is
 
 `graphql-server` lets you define a GraphQL server in Clojure where Malli
-schemas are the source of truth. Resolvers are plain functions annotated
-with their Malli function schema; the library extracts type metadata
-from those schemas, generates a Lacinia schema, and exposes the whole
-thing as Ring middleware (with built-in GraphiQL and SSE subscriptions).
-No Pedestal, no separate `.graphql` SDL file, no hand-maintained
-type-to-resolver mapping.
+schemas are the source of truth. Resolvers are defined as plain functions
+with Malli schemas; the library extracts type metadata from those
+schemas, generates a Lacinia schema, and exposes the whole thing as Ring
+middleware (with built-in GraphiQL and SSE subscriptions).
 
 ## Installation
 
@@ -105,9 +103,9 @@ a query, a validated mutation, and a subscription — everything the public API 
 
 ### Mounting on Ring
 
-`graphql-middleware` is a standard Ring middleware. It serves GraphiQL
-on `GET /graphql`, accepts queries on `POST /graphql`, and (when enabled)
-streams subscriptions over SSE on `GET /graphql/subscriptions`.
+`graphql-middleware` is a Ring middleware. The middleware provides
+GraphiQL on `GET /graphql`, accepts queries on `POST /graphql`, and
+(when enabled) streams subscriptions over SSE on `GET /graphql/subscriptions`.
 
 ```clojure
 (ns example.server

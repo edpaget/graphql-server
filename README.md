@@ -2,17 +2,17 @@
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 
-A Clojure library for defining GraphQL schemas using Malli, wrapping Lacinia with Ring support.
+A Clojure library for defining GraphQL schemas using Malli, wrapping Lacinia with Ring support, designed to be REPL friendly. 
 
 ## What it is
 
 `graphql-server` lets you define a GraphQL server in Clojure where Malli
-schemas are the source of truth. You write resolvers as plain functions
-annotated with their Malli function schema; the library extracts type
-metadata from those schemas, generates a Lacinia schema, and exposes
-the whole thing as Ring middleware (with built-in GraphiQL and SSE
-subscriptions). No Pedestal, no separate `.graphql` SDL file, no
-hand-maintained type-to-resolver mapping.
+schemas are the source of truth. Resolvers are plain functions annotated
+with their Malli function schema; the library extracts type metadata
+from those schemas, generates a Lacinia schema, and exposes the whole
+thing as Ring middleware (with built-in GraphiQL and SSE subscriptions).
+No Pedestal, no separate `.graphql` SDL file, no hand-maintained
+type-to-resolver mapping.
 
 ## Installation
 
@@ -105,8 +105,8 @@ a query, a validated mutation, and a subscription — everything the public API 
 
 ### Mounting on Ring
 
-Serve via the `graphql-middleware` is a Ring middleware. The middleware provides
-GraphiQL on `GET /graphql`, accepts queries on `POST /graphql`, and (when enabled)
+`graphql-middleware` is a standard Ring middleware. It serves GraphiQL
+on `GET /graphql`, accepts queries on `POST /graphql`, and (when enabled)
 streams subscriptions over SSE on `GET /graphql/subscriptions`.
 
 ```clojure
@@ -222,6 +222,10 @@ The repo's `deps.edn` exposes four aliases for working on the library:
 
 The release workflow, prerequisites, and bump semantics are documented
 in [`doc/releasing.md`](doc/releasing.md). 
+
+## Acknowledgements
+
+This was inspired by the REPL-driven Compojure handlers in [Metabase](https://github.com/metabase/metabase).
 
 ## License
 

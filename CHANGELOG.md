@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   object types, interfaces, queries, mutations, subscriptions, and
   the Ring/GraphiQL mount.
 
+### Changed
+- Moved release runbook out of `README.md` into `doc/releasing.md`;
+  the README now links to it.
+
 ## [0.1.1] - 2026-04-27
 
 ### Added

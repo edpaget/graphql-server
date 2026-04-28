@@ -1,5 +1,7 @@
 # graphql-server
 
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
+
 A Clojure library for defining GraphQL schemas using Malli, wrapping Lacinia with Ring support.
 
 ## What it is
@@ -134,6 +136,79 @@ streams subscriptions over SSE on `GET /graphql/subscriptions`.
 
 Visit <http://localhost:3000/graphql> for GraphiQL.
 
+## The def forms
+
+Three macros and a handful of Malli properties cover the surface area
+shown in the example.
+
+### `defresolver`
+
+```clojure
+(defresolver :Object :field
+  "Optional docstring."
+  [:=> [:cat ctx-schema args-schema value-schema] return-schema]
+  [ctx args value]
+  body)
+```
+
+- `:Object` is the GraphQL parent type — `:Query`, `:Mutation`, or any
+  custom object whose fields you're resolving (e.g. `:User`).
+- `:field` is the GraphQL field name; it is camelCased automatically.
+- The Malli `:=>` schema describes a 3-arity function. `args-schema`
+  is usually a `:map`; arguments are coerced (kebab-case keywords,
+  string→typed) and validated before the body runs. A validation
+  failure short-circuits to `{:errors ...}` without invoking the body.
+- `value-schema` describes the parent value passed by Lacinia for
+  field resolvers; use `:any` for `:Query` and `:Mutation`.
+- The macro defines a var named `Object-field` (e.g. `Query-user`)
+  carrying `:graphql/resolver [:Object :field]` metadata. That metadata
+  is what `def-resolver-map` scans for.
+
+### `defstreamer`
+
+```clojure
+(defstreamer :Subscription :field
+  "Optional docstring."
+  [:=> [:cat ctx-schema args-schema :any] value-schema]
+  [ctx args]
+  ch)
+```
+
+- The first argument must be `:Subscription`.
+- The body returns a `core.async` channel. The macro wires up the
+  go-loop that pumps values from the channel to the GraphQL source
+  stream and encodes each value against `value-schema`.
+- Closing the channel ends the subscription; the macro returns a
+  cleanup function that closes it on client disconnect.
+
+### `def-resolver-map`
+
+`(def-resolver-map)` scans the current namespace for vars carrying
+`:graphql/resolver` or `:graphql/streamer` metadata and binds a
+`resolvers` var holding a single map keyed by `[:Object :field]`.
+That map is what you pass as `:resolver-map` to `graphql-middleware`.
+Optional arguments are a docstring and/or a vector of resolver
+middleware functions; middleware wraps resolvers only, not streamers.
+
+### Schema properties
+
+Malli map properties drive type generation:
+
+- `{:graphql/type :Name}` — emits a GraphQL object type.
+- `{:graphql/interface :Name}` — emits an interface.
+- `{:graphql/implements [SchemaVar ...]}` — declares interface
+  implementation. Pass the schema vars themselves, not keywords.
+- `{:graphql/scalar :Name}` — maps an `:or`/`:tuple` to a custom
+  scalar; register `:parse`/`:serialize` via the middleware's
+  `:scalars` option.
+- `{:graphql/hidden true}` — omits a field from the generated schema.
+- `{:graphql/name :OverrideName}` — overrides the camelCased default.
+
+Built-in scalars cover `:string`, `:int`, `:double`/`:float`,
+`:boolean`, `:uuid` (`Uuid`), `:time/instant` (`Date`), and bare maps
+with no fields (`Json`). `:maybe` makes a field nullable; `:vector`
+becomes a non-null list of non-null elements.
+
 ## Dev aliases
 
 The repo's `deps.edn` exposes four aliases for working on the library:
@@ -150,4 +225,4 @@ in [`doc/releasing.md`](doc/releasing.md).
 
 ## License
 
-See LICENSE file in repository root.
+Licensed under the [Apache License, Version 2.0](LICENSE).

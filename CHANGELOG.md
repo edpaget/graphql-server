@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- README "Usage" section with a worked end-to-end example covering
+  object types, interfaces, queries, mutations, subscriptions, and
+  the Ring/GraphiQL mount.
+
 ## [0.1.1] - 2026-04-27
 
 ### Added

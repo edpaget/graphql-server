@@ -22,6 +22,8 @@ Once published to Clojars, add to your `deps.edn`:
 {:deps {net.carcdr/graphql-server {:mvn/version "0.1.1"}}}
 ```
 
+This project follows [semantic versioning](https://semver.org/). 
+
 ### Snapshot stream (GitHub Packages)
 
 If you want to track `main` between releases, consume the `-SNAPSHOT`
@@ -41,9 +43,8 @@ following GitHub's [docs](https://docs.github.com/en/packages/working-with-a-git
 
 ## Usage
 
-The example below is a complete, runnable namespace that defines a `Node`
-interface, a `User` object that implements it, a query, a validated
-mutation, and a subscription — everything the public API exposes.
+The example below defines a `Node` interface, a `User` object that implements it, 
+a query, a validated mutation, and a subscription — everything the public API exposes.
 
 ```clojure
 (ns example.users
@@ -102,8 +103,8 @@ mutation, and a subscription — everything the public API exposes.
 
 ### Mounting on Ring
 
-`graphql-middleware` is a standard Ring middleware. It serves GraphiQL
-on `GET /graphql`, accepts queries on `POST /graphql`, and (when enabled)
+Serve via the `graphql-middleware` is a Ring middleware. The middleware provides
+GraphiQL on `GET /graphql`, accepts queries on `POST /graphql`, and (when enabled)
 streams subscriptions over SSE on `GET /graphql/subscriptions`.
 
 ```clojure
@@ -133,7 +134,7 @@ streams subscriptions over SSE on `GET /graphql/subscriptions`.
 
 Visit <http://localhost:3000/graphql> for GraphiQL.
 
-### Dev aliases
+## Dev aliases
 
 The repo's `deps.edn` exposes four aliases for working on the library:
 
@@ -142,17 +143,10 @@ The repo's `deps.edn` exposes four aliases for working on the library:
 - `clojure -X:format` — apply cljfmt formatting.
 - `clojure -M:repl` — start an nREPL with CIDER middleware.
 
-### What this is *not*
-
-There is no DataLoader-style request batching, no DB integration layer,
-and no built-in authentication. Wire those into your application
-yourself: pull request data and identity off the Ring request inside
-`:context-fn`, then read them from `ctx` in your resolver bodies.
-
 ## Releasing
 
 The release workflow, prerequisites, and bump semantics are documented
-in [`doc/releasing.md`](doc/releasing.md).
+in [`doc/releasing.md`](doc/releasing.md). 
 
 ## License
 
